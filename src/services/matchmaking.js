@@ -33,6 +33,9 @@ async function clearPairing(io, state, socketId, reason) {
       }
     }
   }
+  if (reason === "next") {
+    safeEmit(io, otherId, "conversation_cleared", { conversationId });
+  }
   safeEmit(io, otherId, "partner_left", { reason: reason || "left" });
 }
 
