@@ -3,7 +3,7 @@ const http = require("http");
 const cors = require("cors");
 const { Server } = require("socket.io");
 
-const { PORT, CORS_ORIGIN, MONGO_URL } = require("./config/env");
+const { PORT, CORS_ORIGIN, MONGO_URL, SOCKET_URL } = require("./config/env");
 const { connectMongo } = require("./db/mongo");
 const state = require("./store/state");
 const createAdminRouter = require("./routes/admin");
@@ -13,14 +13,18 @@ async function start() {
   await connectMongo(MONGO_URL);
 
   const app = express();
-  app.use(cors({ origin: CORS_ORIGIN }));
+  const AllowOrigins = CORS_ORIGIN.split(",");
+  const AllowedSocketOrigins = SOCKET_URL.split(",");
+  console.log("AllowOrigins", AllowOrigins)
+  console.log("AllowedSocketOrigins", AllowedSocketOrigins)
+  app.use(cors({ origin: AllowOrigins }));
   app.use(express.json());
 
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: CORS_ORIGIN,
-      methods: ["GET", "POST"]
+      origin: AllowedSocketOrigins,
+      methods: "*"
     }
   });
 
