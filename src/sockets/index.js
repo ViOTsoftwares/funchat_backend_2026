@@ -62,6 +62,12 @@ function registerSocketHandlers(io, state) {
       }).catch(() => {});
     });
 
+    socket.on("typing", ({ isTyping }) => {
+      const partnerId = state.pairedWith.get(socket.id);
+      if (!partnerId) return;
+      safeEmit(io, partnerId, "typing", { isTyping: Boolean(isTyping) });
+    });
+
     socket.on("next", async () => {
       const mode = state.socketMode.get(socket.id);
       if (!mode) return;
