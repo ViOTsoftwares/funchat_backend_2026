@@ -1,12 +1,12 @@
-﻿const { getQueue } = require("../utils/queue");
-const { saveMessage, clearConversation } = require("./messages");
+import { getQueue } from "../utils/queue.js";
+import { saveMessage, clearConversation } from "./messages.js";
 
-function safeEmit(io, socketId, event, payload) {
+export function safeEmit(io, socketId, event, payload) {
   const socket = io.sockets.sockets.get(socketId);
   if (socket) socket.emit(event, payload);
 }
 
-async function clearPairing(io, state, socketId, reason) {
+export async function clearPairing(io, state, socketId, reason) {
   const otherId = state.pairedWith.get(socketId);
   if (!otherId) return;
   const conversationId = state.conversationIdBySocket.get(socketId);
@@ -39,7 +39,7 @@ async function clearPairing(io, state, socketId, reason) {
   safeEmit(io, otherId, "partner_left", { reason: reason || "left" });
 }
 
-async function tryMatch(io, state, mode) {
+export async function tryMatch(io, state, mode) {
   const queue = getQueue(state, mode);
   console.log("[tryMatch]", mode, "queue:", queue.length);
   while (queue.length >= 2) {
@@ -60,8 +60,11 @@ async function tryMatch(io, state, mode) {
       state.pendingConversationClear.delete(conversationId);
     }
 
-    safeEmit(io, a, "matched", { partnerId: b, mode, conversationId });
-    safeEmit(io, b, "matched", { partnerId: a, mode, conversationId });
+    const nameA = io.sockets.sockets.get(a)?.profileName || "Stranger";
+    const nameB = io.sockets.sockets.get(b)?.profileName || "Stranger";
+
+    safeEmit(io, a, "matched", { partnerId: b, mode, conversationId, partnerName: nameB });
+    safeEmit(io, b, "matched", { partnerId: a, mode, conversationId, partnerName: nameA });
 
     const autoMessage = { text: "Hiii", from: "system" };
     safeEmit(io, a, "message", autoMessage);
@@ -69,9 +72,3 @@ async function tryMatch(io, state, mode) {
     saveMessage(conversationId, autoMessage).catch(() => {});
   }
 }
-
-module.exports = {
-  safeEmit,
-  clearPairing,
-  tryMatch
-};

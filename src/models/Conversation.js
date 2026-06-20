@@ -1,8 +1,9 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const MessageItemSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true },
+    senderName: { type: String, default: "" },
     text: { type: String, default: "" },
     emojiUrl: { type: String, default: "" },
     parts: { type: Array, default: [] },
@@ -16,4 +17,4 @@ const ConversationSchema = new mongoose.Schema({
   messages: { type: [MessageItemSchema], default: [] }
 });
 
-module.exports = mongoose.model("Conversation", ConversationSchema);
+export default mongoose.model("Conversation", ConversationSchema);

@@ -1,4 +1,4 @@
-﻿const state = {
+const state = {
   chatQueue: [],
   videoQueue: [],
   socketMode: new Map(),
@@ -6,8 +6,9 @@
   conversationIdBySocket: new Map(),
   conversationSockets: new Map(),
   pendingConversationClear: new Map(),
+  pendingDisconnectCleanups: new Map(),
   reports: [],
   banned: new Set()
 };
 
-module.exports = state;
+export default state;

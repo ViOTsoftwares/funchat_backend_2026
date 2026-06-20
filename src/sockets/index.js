@@ -1,17 +1,20 @@
-﻿const { removeFromQueue, getQueue } = require("../utils/queue");
-const { safeEmit, clearPairing, tryMatch } = require("../services/matchmaking");
-const { saveMessage, getConversationMessages } = require("../services/messages");
+import { removeFromQueue, getQueue } from "../utils/queue.js";
+import { safeEmit, clearPairing, tryMatch } from "../services/matchmaking.js";
+import { saveMessage, getConversationMessages, clearConversation } from "../services/messages.js";
 
 function registerSocketHandlers(io, state) {
   io.on("connection", (socket) => {
+    socket.userId = socket.handshake.auth?.userId || socket.id;
+
     if (state.banned.has(socket.id)) {
       socket.emit("banned", { reason: "You are banned" });
       socket.disconnect(true);
       return;
     }
 
-    socket.on("join", async ({ mode }, ack) => {
-      console.log("[join]", socket.id, "mode:", mode);
+    socket.on("join", async ({ mode, name }, ack) => {
+      console.log("[join]", socket.id, "mode:", mode, "name:", name);
+      socket.profileName = name || "Stranger";
       if (mode !== "chat" && mode !== "video") {
         socket.emit("error", { message: "Invalid mode" });
         if (typeof ack === "function") {
@@ -30,7 +33,7 @@ function registerSocketHandlers(io, state) {
       }
     });
 
-    socket.on("message", async ({ text, emojiUrl, parts }) => {
+    socket.on("message", async ({ text, emojiUrl, parts, senderName }) => {
       const partnerId = state.pairedWith.get(socket.id);
       if (!partnerId) return;
       let derivedText = text || "";
@@ -51,14 +54,16 @@ function registerSocketHandlers(io, state) {
         text: derivedText,
         emojiUrl: derivedEmoji,
         parts,
-        from: socket.id
+        from: socket.userId,
+        senderName: senderName || "Stranger"
       });
       const conversationId = state.conversationIdBySocket.get(socket.id);
       saveMessage(conversationId, {
         text: derivedText,
         emojiUrl: derivedEmoji,
         parts,
-        from: socket.id
+        from: socket.userId,
+        senderName: senderName || "Stranger"
       }).catch(() => {});
     });
 
@@ -66,6 +71,14 @@ function registerSocketHandlers(io, state) {
       const partnerId = state.pairedWith.get(socket.id);
       if (!partnerId) return;
       safeEmit(io, partnerId, "typing", { isTyping: Boolean(isTyping) });
+    });
+
+    socket.on("update_name", ({ name }) => {
+      socket.profileName = name || "Stranger";
+      const partnerId = state.pairedWith.get(socket.id);
+      if (partnerId) {
+        safeEmit(io, partnerId, "partner_name_changed", { name: socket.profileName });
+      }
     });
 
     socket.on("next", async () => {
@@ -115,28 +128,66 @@ function registerSocketHandlers(io, state) {
       safeEmit(io, partnerId, "ice-candidate", { candidate, from: socket.id });
     });
 
-
-    socket.on("resume", async ({ conversationId }) => {
+    socket.on("resume", async ({ conversationId, name }) => {
       if (!conversationId) return;
+
+      socket.userId = socket.handshake.auth?.userId || socket.id;
+      socket.profileName = name || "Stranger";
+
       const history = await getConversationMessages(conversationId);
       socket.emit("history", { conversationId, messages: history });
 
       const participants = state.conversationSockets.get(conversationId);
       if (participants) {
-        const pending = state.pendingConversationClear.get(conversationId);
-        if (pending) {
-          clearTimeout(pending);
+        const pendingClear = state.pendingConversationClear.get(conversationId);
+        if (pendingClear) {
+          clearTimeout(pendingClear);
           state.pendingConversationClear.delete(conversationId);
         }
+        const pendingCleanup = state.pendingDisconnectCleanups.get(conversationId);
+        if (pendingCleanup) {
+          clearTimeout(pendingCleanup.timeoutId);
+          state.pendingDisconnectCleanups.delete(conversationId);
+        }
+
+        let oldSocketId = null;
+        let partnerId = null;
+        for (const pid of participants) {
+          const isConnected = io.sockets.sockets.has(pid);
+          if (!isConnected) {
+            oldSocketId = pid;
+          } else {
+            partnerId = pid;
+          }
+        }
+
+        if (oldSocketId) {
+          participants.delete(oldSocketId);
+          state.pairedWith.delete(oldSocketId);
+          state.conversationIdBySocket.delete(oldSocketId);
+          state.socketMode.delete(oldSocketId);
+        }
+
         participants.add(socket.id);
-        const partnerId = [...participants].find((id) => id !== socket.id);
+
+        if (!partnerId) {
+          partnerId = [...participants].find((id) => id !== socket.id);
+        }
+
         if (partnerId) {
           state.pairedWith.set(socket.id, partnerId);
           state.pairedWith.set(partnerId, socket.id);
           state.conversationIdBySocket.set(socket.id, conversationId);
           state.conversationIdBySocket.set(partnerId, conversationId);
-          safeEmit(io, socket.id, "matched", { partnerId, mode: state.socketMode.get(partnerId) || "chat", conversationId, resumed: true });
-          safeEmit(io, partnerId, "matched", { partnerId: socket.id, mode: state.socketMode.get(partnerId) || "chat", conversationId, resumed: true });
+
+          const partnerMode = state.socketMode.get(partnerId) || "chat";
+          state.socketMode.set(socket.id, partnerMode);
+
+          const myName = socket.profileName || "Stranger";
+          const partnerName = io.sockets.sockets.get(partnerId)?.profileName || "Stranger";
+
+          safeEmit(io, socket.id, "matched", { partnerId, mode: partnerMode, conversationId, partnerName, resumed: true });
+          safeEmit(io, partnerId, "matched", { partnerId: socket.id, mode: partnerMode, conversationId, partnerName: myName, resumed: true });
         }
       }
     });
@@ -155,29 +206,42 @@ function registerSocketHandlers(io, state) {
     socket.on("disconnect", async () => {
       const mode = state.socketMode.get(socket.id);
       const conversationId = state.conversationIdBySocket.get(socket.id);
+
       if (mode) {
         removeFromQueue(getQueue(state, mode), socket.id);
       }
-      await clearPairing(io, state, socket.id, "disconnect");
+
       if (conversationId) {
-        const pending = state.pendingConversationClear.get(conversationId);
-        if (pending) {
-          clearTimeout(pending);
-        }
         const timeoutId = setTimeout(async () => {
-          const participants = state.conversationSockets.get(conversationId);
-          if (!participants || participants.size <= 1) {
-            state.conversationSockets.delete(conversationId);
-            state.pendingConversationClear.delete(conversationId);
-            const { clearConversation } = require("../services/messages");
-            await clearConversation(conversationId);
+          await clearPairing(io, state, socket.id, "disconnect");
+          state.pendingDisconnectCleanups.delete(conversationId);
+
+          const pending = state.pendingConversationClear.get(conversationId);
+          if (pending) {
+            clearTimeout(pending);
           }
-        }, 30000);
-        state.pendingConversationClear.set(conversationId, timeoutId);
+          const dbTimeoutId = setTimeout(async () => {
+            const participants = state.conversationSockets.get(conversationId);
+            if (!participants || participants.size <= 1) {
+              state.conversationSockets.delete(conversationId);
+              state.pendingConversationClear.delete(conversationId);
+              await clearConversation(conversationId);
+            }
+          }, 30000);
+          state.pendingConversationClear.set(conversationId, dbTimeoutId);
+        }, 5000);
+
+        state.pendingDisconnectCleanups.set(conversationId, {
+          timeoutId,
+          oldSocketId: socket.id
+        });
+      } else {
+        await clearPairing(io, state, socket.id, "disconnect");
       }
+
       state.socketMode.delete(socket.id);
     });
   });
 }
 
-module.exports = registerSocketHandlers;
+export default registerSocketHandlers;

@@ -1,9 +1,10 @@
-const Conversation = require("../models/Conversation");
+import Conversation from "../models/Conversation.js";
 
-async function saveMessage(conversationId, payload) {
+export async function saveMessage(conversationId, payload) {
   if (!conversationId) return null;
   const message = {
     userId: payload.from || "system",
+    senderName: payload.senderName || "",
     text: payload.text || "",
     emojiUrl: payload.emojiUrl || "",
     parts: Array.isArray(payload.parts) ? payload.parts : [],
@@ -17,19 +18,13 @@ async function saveMessage(conversationId, payload) {
   );
 }
 
-async function clearConversation(conversationId) {
+export async function clearConversation(conversationId) {
   if (!conversationId) return;
   await Conversation.deleteOne({ conversationId });
 }
 
-async function getConversationMessages(conversationId) {
+export async function getConversationMessages(conversationId) {
   if (!conversationId) return [];
   const convo = await Conversation.findOne({ conversationId }).lean();
   return convo?.messages || [];
 }
-
-module.exports = {
-  saveMessage,
-  clearConversation,
-  getConversationMessages
-};

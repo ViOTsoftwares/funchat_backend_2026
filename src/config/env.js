@@ -1,15 +1,11 @@
-﻿require("dotenv").config();
-
-const PORT = process.env.PORT
-const ADMIN_TOKEN = process.env.ADMIN_TOKEN
-const CORS_ORIGIN = process.env.CORS_ORIGIN
-const MONGO_URL = process.env.MONGO_URL
-const SOCKET_URL = process.env.SOCKET_URL
-
-module.exports = {
-  PORT,
-  ADMIN_TOKEN,
-  CORS_ORIGIN,
-  MONGO_URL,
-  SOCKET_URL
-};
+export const PORT = process.env.PORT;
+export const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+export const CORS_ORIGIN = process.env.CORS_ORIGIN;
+export const MONGO_URL = process.env.MONGO_URL;
+export const SOCKET_URL = process.env.SOCKET_URL;
+export const JWT_SECRET = process.env.JWT_SECRET;
+export const IMAGE_URL = process.env.IMAGE_URL || "http://localhost:4000";
+export const SMTP_HOST = process.env.SMTP_HOST || "";
+export const SMTP_PORT = process.env.SMTP_PORT || "587";
+export const SMTP_USER = process.env.SMTP_USER || "";
+export const SMTP_PASS = process.env.SMTP_PASS || "";

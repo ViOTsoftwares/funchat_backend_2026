@@ -1,5 +1,5 @@
-﻿const express = require("express");
-const { ADMIN_TOKEN } = require("../config/env");
+import express from "express";
+import { ADMIN_TOKEN } from "../config/env.js";
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization || "";
@@ -50,4 +50,4 @@ function createAdminRouter(io, state) {
   return router;
 }
 
-module.exports = createAdminRouter;
+export default createAdminRouter;
