@@ -203,6 +203,99 @@ function registerSocketHandlers(io, state) {
       socket.emit("reported", { ok: true });
     });
 
+    // ── Group Chat Handlers ──
+    socket.on("join_group", async ({ groupId, name }, ack) => {
+      console.log(`[join_group] socket:${socket.id} joined room:${groupId} name:${name}`);
+      socket.profileName = name || "Stranger";
+      socket.join(groupId);
+
+      const conversationId = `group:${groupId}`;
+      try {
+        const history = await getConversationMessages(conversationId);
+        
+        // Broadcast join message (not persisted in DB)
+        socket.to(groupId).emit("group_message", {
+          groupId,
+          text: `${socket.profileName} joined the group.`,
+          from: "system",
+          createdAt: new Date().toISOString()
+        });
+
+        if (typeof ack === "function") {
+          ack({ ok: true, history });
+        }
+      } catch (err) {
+        console.error("Error joining group:", err);
+        if (typeof ack === "function") {
+          ack({ ok: false, error: err.message });
+        }
+      }
+    });
+
+    socket.on("leave_group", ({ groupId }) => {
+      console.log(`[leave_group] socket:${socket.id} left room:${groupId}`);
+      socket.leave(groupId);
+      
+      // Broadcast leave message (not persisted in DB)
+      socket.to(groupId).emit("group_message", {
+        groupId,
+        text: `${socket.profileName || "Stranger"} left the group.`,
+        from: "system",
+        createdAt: new Date().toISOString()
+      });
+    });
+
+    socket.on("group_message", async ({ groupId, text, parts, senderName }) => {
+      let derivedText = text || "";
+      if (Array.isArray(parts) && parts.length) {
+        derivedText = parts
+          .filter((part) => part?.type === "text")
+          .map((part) => part.text || "")
+          .join("");
+      }
+      let derivedEmoji = "";
+      if (Array.isArray(parts)) {
+        const firstEmoji = parts.find((part) => part?.type === "emoji");
+        if (firstEmoji && derivedText.trim() === "") {
+          derivedEmoji = firstEmoji.url;
+        }
+      }
+
+      const messagePayload = {
+        groupId,
+        text: derivedText,
+        emojiUrl: derivedEmoji,
+        parts,
+        from: socket.userId,
+        senderName: senderName || socket.profileName || "Stranger",
+        createdAt: new Date().toISOString()
+      };
+
+      // Broadcast to EVERYONE in the room including sender
+      io.to(groupId).emit("group_message", messagePayload);
+
+      // Save to database under the namespace group:<groupId>
+      const conversationId = `group:${groupId}`;
+      saveMessage(conversationId, {
+        text: derivedText,
+        emojiUrl: derivedEmoji,
+        parts,
+        from: socket.userId,
+        senderName: senderName || socket.profileName || "Stranger"
+      }).catch((err) => {
+        console.error("Error saving group message:", err);
+      });
+    });
+
+    socket.on("group_typing", ({ groupId, isTyping }) => {
+      socket.to(groupId).emit("group_typing", {
+        groupId,
+        userId: socket.userId,
+        senderName: socket.profileName || "Stranger",
+        isTyping: Boolean(isTyping)
+      });
+    });
+
     socket.on("disconnect", async () => {
       const mode = state.socketMode.get(socket.id);
       const conversationId = state.conversationIdBySocket.get(socket.id);
