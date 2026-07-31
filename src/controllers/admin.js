@@ -8,6 +8,7 @@ import {
   SettingModel,
   TestimonialModel,
 } from "../models/index.js";
+import { ENV } from "../config/env.js";
 import state from "../store/state.js";
 
 export const adminLogin = async (req, res) => {
@@ -44,12 +45,12 @@ export const adminLogin = async (req, res) => {
         email: adminData.email,
         role: adminData.role,
       },
-      process.env.JWT_SECRET,
+      ENV.JWT_SECRET,
       { expiresIn: "1d" },
     );
     res.cookie("adminToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: ENV.NODE_ENV === "production",
       sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000,
     });

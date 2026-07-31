@@ -1,10 +1,10 @@
 import express from "express";
-import { ADMIN_TOKEN } from "../config/env.js";
+import { ENV } from "../config/env.js";
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (token !== ADMIN_TOKEN) return res.status(401).json({ error: "unauthorized" });
+  if (token !== ENV.ADMIN_TOKEN) return res.status(401).json({ error: "unauthorized" });
   next();
 }
 

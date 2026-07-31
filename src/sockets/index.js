@@ -1,6 +1,7 @@
 import { removeFromQueue, getQueue } from "../utils/queue.js";
 import { safeEmit, clearPairing, tryMatch } from "../services/matchmaking.js";
 import { saveMessage, getConversationMessages, clearConversation } from "../services/messages.js";
+import CommunityGroup from "../models/communityGroup.js";
 
 function registerSocketHandlers(io, state) {
   io.on("connection", (socket) => {
@@ -211,6 +212,23 @@ function registerSocketHandlers(io, state) {
 
       const conversationId = `group:${groupId}`;
       try {
+        const group = await CommunityGroup.findOne({ slug: groupId });
+        const messageDelay = group?.messageDelay || 0;
+        state.groupDelays.set(groupId, messageDelay);
+
+        let userRemainingMs = 0;
+        if (messageDelay > 0) {
+          const key = `${groupId}:${socket.userId}`;
+          const lastSent = state.lastMessageTime.get(key) || 0;
+          if (lastSent > 0) {
+            const requiredDelay = messageDelay * 60 * 1000;
+            const elapsed = Date.now() - lastSent;
+            if (elapsed < requiredDelay) {
+              userRemainingMs = requiredDelay - elapsed;
+            }
+          }
+        }
+
         const history = await getConversationMessages(conversationId);
         
         // Broadcast join message (not persisted in DB)
@@ -222,7 +240,7 @@ function registerSocketHandlers(io, state) {
         });
 
         if (typeof ack === "function") {
-          ack({ ok: true, history });
+          ack({ ok: true, history, messageDelay, userRemainingMs });
         }
       } catch (err) {
         console.error("Error joining group:", err);
@@ -246,6 +264,24 @@ function registerSocketHandlers(io, state) {
     });
 
     socket.on("group_message", async ({ groupId, text, parts, senderName }) => {
+      const delayMinutes = state.groupDelays.get(groupId) || 0;
+      if (delayMinutes > 0) {
+        const key = `${groupId}:${socket.userId}`;
+        const lastSent = state.lastMessageTime.get(key) || 0;
+        const now = Date.now();
+        const elapsed = now - lastSent;
+        const requiredDelay = delayMinutes * 60 * 1000;
+        
+        if (elapsed < requiredDelay) {
+          const remainingMs = requiredDelay - elapsed;
+          return socket.emit("slow_mode_error", { 
+            message: `Slow mode is active. You must wait before sending another message.`,
+            remainingMs 
+          });
+        }
+        state.lastMessageTime.set(key, now);
+      }
+
       let derivedText = text || "";
       if (Array.isArray(parts) && parts.length) {
         derivedText = parts

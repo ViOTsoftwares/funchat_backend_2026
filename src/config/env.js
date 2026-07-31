@@ -1,11 +1,13 @@
-export const PORT = process.env.PORT;
-export const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
-export const CORS_ORIGIN = process.env.CORS_ORIGIN;
-export const MONGO_URL = process.env.MONGO_URL;
-export const SOCKET_URL = process.env.SOCKET_URL;
-export const JWT_SECRET = process.env.JWT_SECRET;
-export const IMAGE_URL = process.env.IMAGE_URL || "http://localhost:4000";
-export const SMTP_HOST = process.env.SMTP_HOST || "";
-export const SMTP_PORT = process.env.SMTP_PORT || "587";
-export const SMTP_USER = process.env.SMTP_USER || "";
-export const SMTP_PASS = process.env.SMTP_PASS || "";
+export const ENV = {
+  PORT: process.env.PORT,
+  ADMIN_TOKEN: process.env.ADMIN_TOKEN,
+  CORS_ORIGIN: process.env.CORS_ORIGIN,
+  MONGO_URL: process.env.MONGO_URL,
+  SOCKET_URL: process.env.SOCKET_URL,
+  JWT_SECRET: process.env.JWT_SECRET,
+  IMAGE_URL: process.env.IMAGE_URL || "http://localhost:4000",
+  SMTP_HOST: process.env.SMTP_HOST || "",
+  SMTP_PORT: process.env.SMTP_PORT || "587",
+  SMTP_USER: process.env.SMTP_USER || "",
+  SMTP_PASS: process.env.SMTP_PASS || "",
+};

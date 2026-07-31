@@ -8,7 +8,9 @@ const state = {
   pendingConversationClear: new Map(),
   pendingDisconnectCleanups: new Map(),
   reports: [],
-  banned: new Set()
+  banned: new Set(),
+  groupDelays: new Map(),
+  lastMessageTime: new Map(),
 };
 
 export default state;

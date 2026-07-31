@@ -9,6 +9,7 @@ import * as CMSCrt from "../controllers/cms.js";
 import * as TestimonialCrt from "../controllers/testimonial.js";
 import * as ModuleCrt from "../controllers/module.js";
 import * as EmailTemplateCrt from "../controllers/emailTemplate.js";
+import * as CommunityCrt from "../controllers/community.js";
 
 import { uploadLogo } from "../lib/multer.js";
 
@@ -81,5 +82,23 @@ router
   .put(adminAuthMiddleware, uploadLogo.single("logo"), TestimonialCrt.UpdateTestimonial)
   .delete(adminAuthMiddleware, TestimonialCrt.DeleteTestimonial);
 router.get("/testimonial/:id", adminAuthMiddleware, TestimonialCrt.OneTestimonial);
+
+// Community Categories
+router
+  .route("/community-category")
+  .get(adminAuthMiddleware, CommunityCrt.CategoryList)
+  .post(adminAuthMiddleware, CommunityCrt.CreateCategory)
+  .put(adminAuthMiddleware, CommunityCrt.UpdateCategory)
+  .delete(adminAuthMiddleware, CommunityCrt.DeleteCategory);
+router.get("/community-category/:id", adminAuthMiddleware, CommunityCrt.OneCategory);
+
+// Community Groups
+router
+  .route("/community-group")
+  .get(adminAuthMiddleware, CommunityCrt.GroupList)
+  .post(adminAuthMiddleware, CommunityCrt.CreateGroup)
+  .put(adminAuthMiddleware, CommunityCrt.UpdateGroup)
+  .delete(adminAuthMiddleware, CommunityCrt.DeleteGroup);
+router.get("/community-group/:id", adminAuthMiddleware, CommunityCrt.OneGroup);
 
 export default router;

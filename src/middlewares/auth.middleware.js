@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import Admin from "../models/admin.js";
 import { isEmpty } from "../lib/isEmpty.js";
+import { ENV } from "../config/env.js";
 
 export const adminAuthMiddleware = async (req, res, next) => {
   try {
@@ -17,7 +18,7 @@ export const adminAuthMiddleware = async (req, res, next) => {
     }
 
     // 2. Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, ENV.JWT_SECRET);
 
     // 3. Find admin
     const admin = await Admin.findById(decoded.id).select("-password");

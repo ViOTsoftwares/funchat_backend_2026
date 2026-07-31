@@ -3,10 +3,11 @@ import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
 
-import { PORT, CORS_ORIGIN, MONGO_URL, SOCKET_URL, ADMIN_TOKEN } from "./config/env.js";
+import { ENV } from "./config/env.js";
 import state from "./store/state.js";
 import createAdminRouter from "./routes/admin.js";
 import adminRestRouter from "./routes/admin.router.js";
+import publicRestRouter from "./routes/public.router.js";
 import registerSocketHandlers from "./sockets/index.js";
 import { connectDB } from "./config/DB.js";
 
@@ -14,8 +15,8 @@ async function start() {
   await connectDB();
 
   const app = express();
-  const AllowOrigins = CORS_ORIGIN.split(",");
-  const AllowedSocketOrigins = SOCKET_URL.split(",");
+  const AllowOrigins = ENV.CORS_ORIGIN ? ENV.CORS_ORIGIN.split(",") : [];
+  const AllowedSocketOrigins = ENV.SOCKET_URL ? ENV.SOCKET_URL.split(",") : [];
   console.log("AllowOrigins", AllowOrigins);
   console.log("AllowedSocketOrigins", AllowedSocketOrigins);
 
@@ -23,7 +24,7 @@ async function start() {
   app.use(express.json());
 
   // Serve uploaded files statically
-  app.use("/uploads", express.static("src/uploads"));
+  app.use("/image", express.static("src/uploads"));
 
   const server = http.createServer(app);
   const io = new Server(server, {
@@ -43,12 +44,15 @@ async function start() {
   // Full JWT-based REST admin API (login, CRUD, dashboard, etc.)
   app.use("/api/admin", adminRestRouter);
 
+  // Public REST API
+  app.use("/api/public", publicRestRouter);
+
   app.get("/health", (req, res) => {
     res.json({ ok: true });
   });
 
-  server.listen(PORT, () => {
-    console.log(`FunChat backend listening on port ${PORT}`);
+  server.listen(ENV.PORT, () => {
+    console.log(`🚀 Server running on port ${ENV.PORT}`);
   });
 }
 

@@ -2,6 +2,8 @@ import SettingModel from "../models/setting.js";
 import fs from "fs";
 import path from "path";
 import { isEmpty } from "../lib/isEmpty.js";
+import { ENV } from "../config/env.js";
+
 export const GetSetting = async (req, res) => {
   try {
     const result = await SettingModel.findOne();
@@ -73,7 +75,6 @@ export const UpdateSetting = async (req, res) => {
       });
     }
 
-
     // 1️⃣ Find existing setting
     const existingSetting = await SettingModel.findOne();
 
@@ -84,10 +85,6 @@ export const UpdateSetting = async (req, res) => {
         errors: { logo: "Logo is required" },
       });
     }
-
-    // if (!existingSetting) {
-    //   return res.status(404).json({ message: "Setting not found" });
-    // }
 
     // 2️⃣ Delete old image if exists
     if (req.file && existingSetting?.logo) {
@@ -105,7 +102,7 @@ export const UpdateSetting = async (req, res) => {
 
     // 3️⃣ Save new image
     const file = req.file;
-    const logo = file ? `${process.env.IMAGE_URL}/logos/${file.filename}` : existingSetting?.logo || "";
+    const logo = file ? `${ENV.IMAGE_URL}/logos/${file.filename}` : existingSetting?.logo || "";
 
     // 4️⃣ Update DB
     if (existingSetting?._id) {

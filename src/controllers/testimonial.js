@@ -1,4 +1,6 @@
 import { TestimonialModel } from "../models/index.js";
+import { HandleError } from "../utils/error.js";
+import { ENV } from "../config/env.js";
 import { Pagination } from "../lib/pagination.js";
 import { ColumnFilter } from "../lib/columnFilter.js";
 import fs from "fs";
@@ -36,7 +38,7 @@ export const OneTestimonial = async (req, res) => {
 export const CreateTestimonial = async (req, res) => {
   try {
     const { name, designation, content, status } = req.body;
-    const logo = req.file ? `${process.env.IMAGE_URL}/logos/${req.file.filename}` : "";
+    const logo = req.file ? `${ENV.IMAGE_URL}/logos/${req.file.filename}` : "";
     await TestimonialModel.create({ name, designation, content, logo, status: status || "active" });
     return res.status(200).json({ success: true, message: "Created successfully" });
   } catch (error) {
@@ -64,7 +66,7 @@ export const UpdateTestimonial = async (req, res) => {
           if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
         }
       }
-      updateData.logo = `${process.env.IMAGE_URL}/logos/${req.file.filename}`;
+      updateData.logo = `${ENV.IMAGE_URL}/logos/${req.file.filename}`;
     }
 
     await TestimonialModel.updateOne({ _id: id }, updateData);
