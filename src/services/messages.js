@@ -28,3 +28,44 @@ export async function getConversationMessages(conversationId) {
   const convo = await Conversation.findOne({ conversationId }).lean();
   return convo?.messages || [];
 }
+
+/**
+ * Fetch a paginated slice of messages for a conversation.
+ * Returns the last `limit` messages before the given `skip` offset from the end.
+ *
+ * @param {string} conversationId
+ * @param {number} limit   - how many messages to return (default 10)
+ * @param {number} skip    - how many messages from the END to skip before reading (default 0)
+ * @returns {{ messages: Array, total: number, hasMore: boolean }}
+ */
+export async function getConversationMessagesPaged(conversationId, limit = 10, skip = 0) {
+  if (!conversationId) return { messages: [], total: 0, hasMore: false };
+
+  const result = await Conversation.aggregate([
+    { $match: { conversationId } },
+    {
+      $project: {
+        total: { $size: "$messages" },
+        messages: {
+          $slice: [
+            "$messages",
+            // start index (from front): total - skip - limit, clamped to 0
+            { $max: [{ $subtract: [{ $subtract: [{ $size: "$messages" }, skip] }, limit] }, 0] },
+            limit
+          ]
+        }
+      }
+    }
+  ]);
+
+  if (!result || result.length === 0) {
+    return { messages: [], total: 0, hasMore: false };
+  }
+
+  const { messages, total } = result[0];
+  // hasMore = there are messages further back beyond what we returned
+  const startIndex = Math.max(total - skip - limit, 0);
+  const hasMore = startIndex > 0;
+
+  return { messages: messages || [], total, hasMore };
+}

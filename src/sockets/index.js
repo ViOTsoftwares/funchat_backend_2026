@@ -1,7 +1,9 @@
 import { removeFromQueue, getQueue } from "../utils/queue.js";
 import { safeEmit, clearPairing, tryMatch } from "../services/matchmaking.js";
-import { saveMessage, getConversationMessages, clearConversation } from "../services/messages.js";
+import { saveMessage, getConversationMessages, clearConversation, getConversationMessagesPaged } from "../services/messages.js";
 import CommunityGroup from "../models/communityGroup.js";
+
+const GROUP_PAGE_SIZE = 10;
 
 function registerSocketHandlers(io, state) {
   io.on("connection", (socket) => {
@@ -229,8 +231,9 @@ function registerSocketHandlers(io, state) {
           }
         }
 
-        const history = await getConversationMessages(conversationId);
-        
+        // Fetch last PAGE_SIZE messages for initial load
+        const { messages: history, total, hasMore } = await getConversationMessagesPaged(conversationId, GROUP_PAGE_SIZE, 0);
+
         // Broadcast join message (not persisted in DB)
         socket.to(groupId).emit("group_message", {
           groupId,
@@ -240,7 +243,7 @@ function registerSocketHandlers(io, state) {
         });
 
         if (typeof ack === "function") {
-          ack({ ok: true, history, messageDelay, userRemainingMs });
+          ack({ ok: true, history, hasMore, totalMessages: total, messageDelay, userRemainingMs });
         }
       } catch (err) {
         console.error("Error joining group:", err);
@@ -321,6 +324,26 @@ function registerSocketHandlers(io, state) {
       }).catch((err) => {
         console.error("Error saving group message:", err);
       });
+    });
+
+    // ── Load More Messages (lazy pagination) ──
+    socket.on("load_more_messages", async ({ groupId, skip }, ack) => {
+      const conversationId = `group:${groupId}`;
+      try {
+        const { messages, hasMore } = await getConversationMessagesPaged(
+          conversationId,
+          GROUP_PAGE_SIZE,
+          typeof skip === "number" ? skip : 0
+        );
+        if (typeof ack === "function") {
+          ack({ ok: true, messages, hasMore });
+        }
+      } catch (err) {
+        console.error("Error loading more messages:", err);
+        if (typeof ack === "function") {
+          ack({ ok: false, error: err.message });
+        }
+      }
     });
 
     socket.on("group_typing", ({ groupId, isTyping }) => {
