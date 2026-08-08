@@ -20,6 +20,8 @@ export const GetPublicCommunities = async (req, res) => {
           groups: groups.map(g => ({
             id: g.slug,
             name: g.name,
+            image: g.image || cat.image || "",
+            categoryImage: cat.image || "",
             description: g.description,
             chat_timing: g.chat_timing,
             isPopular: Boolean(g.isPopular),
@@ -139,6 +141,9 @@ export const OneGroup = async (req, res) => {
 export const CreateGroup = async (req, res) => {
   try {
     const payload = { ...req.body };
+    if (req.file) {
+      payload.image = req.file.filename;
+    }
     if (payload.isActive !== undefined) {
       payload.isActive = payload.isActive === "true" || payload.isActive === true;
     }
@@ -158,6 +163,9 @@ export const CreateGroup = async (req, res) => {
 export const UpdateGroup = async (req, res) => {
   try {
     const payload = { ...req.body };
+    if (req.file) {
+      payload.image = req.file.filename;
+    }
     if (payload.isActive !== undefined) {
       payload.isActive = payload.isActive === "true" || payload.isActive === true;
     }

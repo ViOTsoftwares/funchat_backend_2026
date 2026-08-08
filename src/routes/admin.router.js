@@ -97,8 +97,8 @@ router.get("/community-category/:id", adminAuthMiddleware, CommunityCrt.OneCateg
 router
   .route("/community-group")
   .get(adminAuthMiddleware, CommunityCrt.GroupList)
-  .post(adminAuthMiddleware, CommunityCrt.CreateGroup)
-  .put(adminAuthMiddleware, CommunityCrt.UpdateGroup)
+  .post(adminAuthMiddleware, uploadLogo.single("image"), CommunityCrt.CreateGroup)
+  .put(adminAuthMiddleware, uploadLogo.single("image"), CommunityCrt.UpdateGroup)
   .delete(adminAuthMiddleware, CommunityCrt.DeleteGroup);
 router.get("/community-group/:id", adminAuthMiddleware, CommunityCrt.OneGroup);
 

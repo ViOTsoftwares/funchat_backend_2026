@@ -23,6 +23,10 @@ const communityGroupSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    image: {
+      type: String,
+      default: "",
+    },
     chat_timing: {
       type: String,
       default: "24/7",
