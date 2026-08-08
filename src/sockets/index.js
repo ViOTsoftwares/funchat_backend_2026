@@ -266,7 +266,7 @@ function registerSocketHandlers(io, state) {
       });
     });
 
-    socket.on("group_message", async ({ groupId, text, parts, senderName }) => {
+    socket.on("group_message", async ({ groupId, text, parts, senderName, id, tempId, from, userId }) => {
       const delayMinutes = state.groupDelays.get(groupId) || 0;
       if (delayMinutes > 0) {
         const key = `${groupId}:${socket.userId}`;
@@ -300,12 +300,17 @@ function registerSocketHandlers(io, state) {
         }
       }
 
+      const clientMsgId = id || tempId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
       const messagePayload = {
+        id: clientMsgId,
+        tempId: tempId || clientMsgId,
         groupId,
         text: derivedText,
         emojiUrl: derivedEmoji,
         parts,
-        from: socket.userId,
+        from: from || socket.userId,
+        userId: userId || from || socket.userId,
         senderName: senderName || socket.profileName || "Stranger",
         createdAt: new Date().toISOString()
       };
@@ -316,11 +321,13 @@ function registerSocketHandlers(io, state) {
       // Save to database under the namespace group:<groupId>
       const conversationId = `group:${groupId}`;
       saveMessage(conversationId, {
+        id: messagePayload.id,
         text: derivedText,
         emojiUrl: derivedEmoji,
         parts,
-        from: socket.userId,
-        senderName: senderName || socket.profileName || "Stranger"
+        from: messagePayload.from,
+        userId: messagePayload.userId,
+        senderName: messagePayload.senderName,
       }).catch((err) => {
         console.error("Error saving group message:", err);
       });
