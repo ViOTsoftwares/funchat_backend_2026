@@ -10,6 +10,7 @@ import * as TestimonialCrt from "../controllers/testimonial.js";
 import * as ModuleCrt from "../controllers/module.js";
 import * as EmailTemplateCrt from "../controllers/emailTemplate.js";
 import * as CommunityCrt from "../controllers/community.js";
+import * as AdCrt from "../controllers/advertisement.js";
 
 import { uploadLogo } from "../lib/multer.js";
 
@@ -87,8 +88,8 @@ router.get("/testimonial/:id", adminAuthMiddleware, TestimonialCrt.OneTestimonia
 router
   .route("/community-category")
   .get(adminAuthMiddleware, CommunityCrt.CategoryList)
-  .post(adminAuthMiddleware, CommunityCrt.CreateCategory)
-  .put(adminAuthMiddleware, CommunityCrt.UpdateCategory)
+  .post(adminAuthMiddleware, uploadLogo.single("image"), CommunityCrt.CreateCategory)
+  .put(adminAuthMiddleware, uploadLogo.single("image"), CommunityCrt.UpdateCategory)
   .delete(adminAuthMiddleware, CommunityCrt.DeleteCategory);
 router.get("/community-category/:id", adminAuthMiddleware, CommunityCrt.OneCategory);
 
@@ -100,5 +101,15 @@ router
   .put(adminAuthMiddleware, CommunityCrt.UpdateGroup)
   .delete(adminAuthMiddleware, CommunityCrt.DeleteGroup);
 router.get("/community-group/:id", adminAuthMiddleware, CommunityCrt.OneGroup);
+
+// Advertisements
+router
+  .route("/ads")
+  .get(adminAuthMiddleware, AdCrt.AdList)
+  .post(adminAuthMiddleware, uploadLogo.single("image"), AdCrt.CreateAd)
+  .put(adminAuthMiddleware, uploadLogo.single("image"), AdCrt.UpdateAd)
+  .delete(adminAuthMiddleware, AdCrt.DeleteAd);
+router.post("/ads/seed", adminAuthMiddleware, AdCrt.SeedAdsEndpoint);
+router.get("/ads/:id", adminAuthMiddleware, AdCrt.OneAd);
 
 export default router;

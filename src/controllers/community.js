@@ -16,11 +16,13 @@ export const GetPublicCommunities = async (req, res) => {
           name: cat.name,
           image: cat.image,
           description: cat.description,
+          isPopular: Boolean(cat.isPopular),
           groups: groups.map(g => ({
             id: g.slug,
             name: g.name,
             description: g.description,
             chat_timing: g.chat_timing,
+            isPopular: Boolean(g.isPopular),
           })),
         };
       })
@@ -59,6 +61,12 @@ export const CreateCategory = async (req, res) => {
     if (req.file) {
       payload.image = req.file.filename;
     }
+    if (payload.isActive !== undefined) {
+      payload.isActive = payload.isActive === "true" || payload.isActive === true;
+    }
+    if (payload.isPopular !== undefined) {
+      payload.isPopular = payload.isPopular === "true" || payload.isPopular === true;
+    }
     const newCategory = await CommunityCategory.create(payload);
     res.status(201).json({ ok: true, data: newCategory, message: "Category created successfully" });
   } catch (error) {
@@ -75,7 +83,17 @@ export const UpdateCategory = async (req, res) => {
     if (req.file) {
       payload.image = req.file.filename;
     }
-    const updated = await CommunityCategory.findByIdAndUpdate(req.body._id, payload, { new: true });
+    if (payload.isActive !== undefined) {
+      payload.isActive = payload.isActive === "true" || payload.isActive === true;
+    }
+    if (payload.isPopular !== undefined) {
+      payload.isPopular = payload.isPopular === "true" || payload.isPopular === true;
+    }
+    const id = req.body._id || req.body.id;
+    if (!id) {
+      return res.status(400).json({ ok: false, message: "Category ID is required" });
+    }
+    const updated = await CommunityCategory.findByIdAndUpdate(id, payload, { new: true });
     if (!updated) return res.status(404).json({ ok: false, message: "Category not found" });
     res.status(200).json({ ok: true, data: updated, message: "Category updated successfully" });
   } catch (error) {
@@ -120,7 +138,14 @@ export const OneGroup = async (req, res) => {
 
 export const CreateGroup = async (req, res) => {
   try {
-    const newGroup = await CommunityGroup.create(req.body);
+    const payload = { ...req.body };
+    if (payload.isActive !== undefined) {
+      payload.isActive = payload.isActive === "true" || payload.isActive === true;
+    }
+    if (payload.isPopular !== undefined) {
+      payload.isPopular = payload.isPopular === "true" || payload.isPopular === true;
+    }
+    const newGroup = await CommunityGroup.create(payload);
     res.status(201).json({ ok: true, data: newGroup, message: "Group created successfully" });
   } catch (error) {
     if (error.code === 11000) {
@@ -132,7 +157,18 @@ export const CreateGroup = async (req, res) => {
 
 export const UpdateGroup = async (req, res) => {
   try {
-    const updated = await CommunityGroup.findByIdAndUpdate(req.body._id, req.body, { new: true });
+    const payload = { ...req.body };
+    if (payload.isActive !== undefined) {
+      payload.isActive = payload.isActive === "true" || payload.isActive === true;
+    }
+    if (payload.isPopular !== undefined) {
+      payload.isPopular = payload.isPopular === "true" || payload.isPopular === true;
+    }
+    const id = req.body._id || req.body.id;
+    if (!id) {
+      return res.status(400).json({ ok: false, message: "Group ID is required" });
+    }
+    const updated = await CommunityGroup.findByIdAndUpdate(id, payload, { new: true });
     if (!updated) return res.status(404).json({ ok: false, message: "Group not found" });
     res.status(200).json({ ok: true, data: updated, message: "Group updated successfully" });
   } catch (error) {

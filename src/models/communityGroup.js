@@ -31,6 +31,10 @@ const communityGroupSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    isPopular: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,

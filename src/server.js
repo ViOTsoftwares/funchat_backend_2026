@@ -10,9 +10,11 @@ import adminRestRouter from "./routes/admin.router.js";
 import publicRestRouter from "./routes/public.router.js";
 import registerSocketHandlers from "./sockets/index.js";
 import { connectDB } from "./config/DB.js";
+import { seedDefaultAds } from "./controllers/advertisement.js";
 
 async function start() {
   await connectDB();
+  await seedDefaultAds();
 
   const app = express();
   const AllowOrigins = ENV.CORS_ORIGIN ? ENV.CORS_ORIGIN.split(",") : [];
