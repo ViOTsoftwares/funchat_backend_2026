@@ -13,6 +13,23 @@ const SettingSchema = new mongoose.Schema(
     xlink: { type: String, default: "" },
     instagramlink: { type: String, default: "" },
     facebooklink: { type: String, default: "" },
+    featureControl: {
+      chat: {
+        type: String,
+        enum: ["live", "coming_soon", "maintenance"],
+        default: "live",
+      },
+      video: {
+        type: String,
+        enum: ["live", "coming_soon", "maintenance"],
+        default: "live",
+      },
+      community: {
+        type: String,
+        enum: ["live", "coming_soon", "maintenance"],
+        default: "live",
+      },
+    },
   },
   { timestamps: true }
 );

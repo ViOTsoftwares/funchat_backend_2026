@@ -36,6 +36,11 @@ router
   .get(adminAuthMiddleware, SettingCrt.GetSetting)
   .post(adminAuthMiddleware, uploadLogo.single("logo"), SettingCrt.UpdateSetting);
 
+router
+  .route("/settings/feature-control")
+  .get(adminAuthMiddleware, SettingCrt.GetFeatureControl)
+  .post(adminAuthMiddleware, SettingCrt.UpdateFeatureControl);
+
 // blog
 router
   .route("/blog")

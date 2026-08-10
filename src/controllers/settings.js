@@ -148,3 +148,86 @@ export const UpdateSetting = async (req, res) => {
       .json({ success: false, message: "Something went wrong" });
   }
 };
+
+const DEFAULT_FEATURE_CONTROL = {
+  chat: "live",
+  video: "live",
+  community: "live",
+};
+
+export const GetFeatureControl = async (req, res) => {
+  try {
+    const setting = await SettingModel.findOne();
+    const result = setting?.featureControl || DEFAULT_FEATURE_CONTROL;
+    return res.status(200).json({
+      success: true,
+      message: "Feature control settings",
+      result,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ success: false, message: "Something went wrong" });
+  }
+};
+
+export const UpdateFeatureControl = async (req, res) => {
+  try {
+    const { chat = "live", video = "live", community = "live" } = req.body;
+    const allowed = ["live", "coming_soon", "maintenance"];
+
+    const validChat = allowed.includes(chat) ? chat : "live";
+    const validVideo = allowed.includes(video) ? video : "live";
+    const validCommunity = allowed.includes(community) ? community : "live";
+
+    const featureControl = {
+      chat: validChat,
+      video: validVideo,
+      community: validCommunity,
+    };
+
+    const existingSetting = await SettingModel.findOne();
+    if (existingSetting?._id) {
+      await SettingModel.updateOne(
+        { _id: existingSetting._id },
+        { $set: { featureControl } }
+      );
+    } else {
+      await SettingModel.create({
+        featureControl,
+      });
+    }
+
+    // Broadcast update via Socket.IO if available
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("feature_control_updated", featureControl);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Feature control updated successfully",
+      result: featureControl,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ success: false, message: "Something went wrong" });
+  }
+};
+
+export const GetPublicFeatureControl = async (req, res) => {
+  try {
+    const setting = await SettingModel.findOne();
+    const result = setting?.featureControl || DEFAULT_FEATURE_CONTROL;
+    return res.status(200).json({
+      success: true,
+      result,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      result: DEFAULT_FEATURE_CONTROL,
+    });
+  }
+};
+

@@ -2,12 +2,25 @@ import { removeFromQueue, getQueue } from "../utils/queue.js";
 import { safeEmit, clearPairing, tryMatch } from "../services/matchmaking.js";
 import { saveMessage, getConversationMessages, clearConversation, getConversationMessagesPaged } from "../services/messages.js";
 import CommunityGroup from "../models/communityGroup.js";
+import SettingModel from "../models/setting.js";
 
 const GROUP_PAGE_SIZE = 10;
 
 function registerSocketHandlers(io, state) {
   io.on("connection", (socket) => {
     socket.userId = socket.handshake.auth?.userId || socket.id;
+
+    // Send current feature control status to newly connected client
+    SettingModel.findOne()
+      .then((setting) => {
+        const fc = setting?.featureControl || {
+          chat: "live",
+          video: "live",
+          community: "live",
+        };
+        socket.emit("feature_control_updated", fc);
+      })
+      .catch(() => {});
 
     if (state.banned.has(socket.id)) {
       socket.emit("banned", { reason: "You are banned" });
@@ -24,6 +37,22 @@ function registerSocketHandlers(io, state) {
           ack({ ok: false, error: "invalid_mode" });
         }
         return;
+      }
+
+      // Check if feature is live
+      try {
+        const setting = await SettingModel.findOne();
+        const fc = setting?.featureControl || { chat: "live", video: "live", community: "live" };
+        const modeStatus = fc[mode] || "live";
+        if (modeStatus !== "live") {
+          socket.emit("feature_unavailable", { mode, status: modeStatus });
+          if (typeof ack === "function") {
+            ack({ ok: false, error: "feature_unavailable", status: modeStatus });
+          }
+          return;
+        }
+      } catch (err) {
+        console.error("Feature check error on join:", err);
       }
       await clearPairing(io, state, socket.id, "restart");
       state.socketMode.set(socket.id, mode);
