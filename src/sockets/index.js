@@ -115,19 +115,28 @@ function registerSocketHandlers(io, state) {
     });
 
     socket.on("next", async () => {
-      const mode = state.socketMode.get(socket.id);
-      if (!mode) return;
+      let mode = state.socketMode.get(socket.id) || "chat";
+      state.socketMode.set(socket.id, mode);
+
       const partnerId = state.pairedWith.get(socket.id);
       const conversationId = state.conversationIdBySocket.get(socket.id);
       const systemMessage = { text: "User has left the chat.", from: "system" };
-      safeEmit(io, socket.id, "message", systemMessage);
+
       if (partnerId) {
         safeEmit(io, partnerId, "message", systemMessage);
       }
-      saveMessage(conversationId, systemMessage).catch(() => {});
+      if (conversationId) {
+        saveMessage(conversationId, systemMessage).catch(() => {});
+      }
+
       await clearPairing(io, state, socket.id, "next");
+
       const queue = getQueue(state, mode);
-      if (!queue.includes(socket.id)) queue.push(socket.id);
+      if (!queue.includes(socket.id)) {
+        queue.push(socket.id);
+      }
+
+      console.log(`⚡ [NEXT BUTTON] Socket ${socket.id} re-entered ${mode} queue. Queue size: ${queue.length}`);
       await tryMatch(io, state, mode);
     });
 
