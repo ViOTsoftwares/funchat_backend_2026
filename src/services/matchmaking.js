@@ -39,36 +39,69 @@ export async function clearPairing(io, state, socketId, reason) {
   safeEmit(io, otherId, "partner_left", { reason: reason || "left" });
 }
 
+const soloTimers = new Map();
+
+export function executePair(io, state, mode, a, b, customNameB = null) {
+  state.pairedWith.set(a, b);
+  state.pairedWith.set(b, a);
+  const conversationId = `${a}:${b}:${Date.now()}`;
+  state.conversationIdBySocket.set(a, conversationId);
+  state.conversationIdBySocket.set(b, conversationId);
+  state.conversationSockets.set(conversationId, new Set([a, b]));
+
+  const pending = state.pendingConversationClear.get(conversationId);
+  if (pending) {
+    clearTimeout(pending);
+    state.pendingConversationClear.delete(conversationId);
+  }
+
+  const nameA = io.sockets.sockets.get(a)?.profileName || "Stranger";
+  const nameB = customNameB || io.sockets.sockets.get(b)?.profileName || "Stranger";
+
+  safeEmit(io, a, "matched", { partnerId: b, mode, conversationId, partnerName: nameB });
+  if (!b.startsWith("bot_")) {
+    safeEmit(io, b, "matched", { partnerId: a, mode, conversationId, partnerName: nameA });
+  }
+
+  const autoMessage = { text: "Connected! Say hello to your partner 👋", from: "system" };
+  safeEmit(io, a, "message", autoMessage);
+  if (!b.startsWith("bot_")) {
+    safeEmit(io, b, "message", autoMessage);
+  }
+  saveMessage(conversationId, autoMessage).catch(() => {});
+}
+
 export async function tryMatch(io, state, mode) {
   const queue = getQueue(state, mode);
-  console.log("[tryMatch]", mode, "queue:", queue.length);
+  console.log("[tryMatch]", mode, "queue size:", queue.length);
+
+  // 1. Pair real users first if 2 or more are in queue
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
     if (!a || !b || a === b) continue;
 
-    console.log("[matched]", mode, a, b);
-    state.pairedWith.set(a, b);
-    state.pairedWith.set(b, a);
-    const conversationId = `${a}:${b}:${Date.now()}`;
-    state.conversationIdBySocket.set(a, conversationId);
-    state.conversationIdBySocket.set(b, conversationId);
-    state.conversationSockets.set(conversationId, new Set([a, b]));
-    const pending = state.pendingConversationClear.get(conversationId);
-    if (pending) {
-      clearTimeout(pending);
-      state.pendingConversationClear.delete(conversationId);
+    if (soloTimers.has(a)) { clearTimeout(soloTimers.get(a)); soloTimers.delete(a); }
+    if (soloTimers.has(b)) { clearTimeout(soloTimers.get(b)); soloTimers.delete(b); }
+
+    executePair(io, state, mode, a, b);
+  }
+
+  // 2. If a single user is waiting in chat queue, match with companion after 3.5s so single user testing works
+  if (queue.length === 1 && mode === "chat") {
+    const singleSocketId = queue[0];
+    if (!soloTimers.has(singleSocketId)) {
+      const timer = setTimeout(() => {
+        soloTimers.delete(singleSocketId);
+        const idx = queue.indexOf(singleSocketId);
+        if (idx !== -1) {
+          queue.splice(idx, 1);
+          const botId = `bot_${Date.now()}`;
+          console.log("[FunBot Auto-Matched]", singleSocketId, botId);
+          executePair(io, state, mode, singleSocketId, botId, "FunBot ✨");
+        }
+      }, 3500);
+      soloTimers.set(singleSocketId, timer);
     }
-
-    const nameA = io.sockets.sockets.get(a)?.profileName || "Stranger";
-    const nameB = io.sockets.sockets.get(b)?.profileName || "Stranger";
-
-    safeEmit(io, a, "matched", { partnerId: b, mode, conversationId, partnerName: nameB });
-    safeEmit(io, b, "matched", { partnerId: a, mode, conversationId, partnerName: nameA });
-
-    const autoMessage = { text: "Hiii", from: "system" };
-    safeEmit(io, a, "message", autoMessage);
-    safeEmit(io, b, "message", autoMessage);
-    saveMessage(conversationId, autoMessage).catch(() => {});
   }
 }

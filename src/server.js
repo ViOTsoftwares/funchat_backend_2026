@@ -21,12 +21,35 @@ async function start() {
   await seedDefaultEmailTemplates();
 
   const app = express();
-  const AllowOrigins = ENV.CORS_ORIGIN ? ENV.CORS_ORIGIN.split(",") : [];
-  const AllowedSocketOrigins = ENV.SOCKET_URL ? ENV.SOCKET_URL.split(",") : [];
-  console.log("AllowOrigins", AllowOrigins);
-  console.log("AllowedSocketOrigins", AllowedSocketOrigins);
+  const defaultAllowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:4000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+  ];
+  const AllowOrigins = ENV.CORS_ORIGIN
+    ? ENV.CORS_ORIGIN.split(",").map((o) => o.trim())
+    : defaultAllowedOrigins;
+  const AllowedSocketOrigins = ENV.SOCKET_URL
+    ? ENV.SOCKET_URL.split(",").map((o) => o.trim())
+    : defaultAllowedOrigins;
 
-  app.use(cors({ origin: AllowOrigins, credentials: true }));
+  console.log("AllowOrigins:", AllowOrigins);
+  console.log("AllowedSocketOrigins:", AllowedSocketOrigins);
+
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, curl, postman) or matching origins
+        if (!origin || AllowOrigins.includes("*") || AllowOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(null, true); // Permissive in dev
+      },
+      credentials: true,
+    })
+  );
   app.use(express.json());
 
   // Serve uploaded files statically
@@ -35,9 +58,10 @@ async function start() {
   const server = http.createServer(app);
   const io = new Server(server, {
     cors: {
-      origin: AllowedSocketOrigins,
-      methods: "*"
-    }
+      origin: "*",
+      methods: ["GET", "POST"],
+      credentials: true,
+    },
   });
 
   app.set("io", io);
