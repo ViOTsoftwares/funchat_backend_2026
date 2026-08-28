@@ -16,6 +16,8 @@ router.post("/auth/save-username", UserAuthCrt.SaveInitialUsername);
 router.post("/auth/send-otp", UserAuthCrt.SendOtp);
 router.post("/auth/verify-otp", UserAuthCrt.VerifyOtp);
 router.post("/auth/google", UserAuthCrt.GoogleLogin);
+router.get("/auth/google/redirect", UserAuthCrt.GoogleAuthInit);
+router.get("/auth/google/callback", UserAuthCrt.GoogleAuthCallback);
 router.get("/auth/me", userAuthMiddleware, UserAuthCrt.GetMe);
 router.put("/auth/profile", userAuthMiddleware, UserAuthCrt.UpdateProfile);
 

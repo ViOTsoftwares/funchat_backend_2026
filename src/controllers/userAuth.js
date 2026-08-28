@@ -594,3 +594,165 @@ export const GoogleLogin = async (req, res) => {
     });
   }
 };
+
+// ─── 5.1 Google OAuth Dynamic Redirect Initializer ────────────────────────────
+export const GoogleAuthInit = async (req, res) => {
+  try {
+    const clientId = ENV.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Google Client ID is not configured on backend environment.",
+      });
+    }
+
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+
+    const defaultCallback = `${protocol}://${host}/auth/google/callback`;
+    const redirectUri = req.query.redirect_uri || ENV.GOOGLE_CALLBACK_URL || defaultCallback;
+
+    const returnTo = req.query.returnTo || req.headers.referer || "http://localhost:5173";
+
+    const statePayload = JSON.stringify({ returnTo, redirectUri });
+    const encodedState = Buffer.from(statePayload).toString("base64");
+
+    const googleAuthUrl =
+      `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `response_type=code` +
+      `&client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&scope=${encodeURIComponent("openid email profile")}` +
+      `&state=${encodeURIComponent(encodedState)}` +
+      `&prompt=select_account`;
+
+    return res.redirect(googleAuthUrl);
+  } catch (error) {
+    console.error("GoogleAuthInit Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to initialize Google OAuth redirect",
+    });
+  }
+};
+
+// ─── 5.2 Google OAuth Dynamic Callback Handler ──────────────────────────────
+export const GoogleAuthCallback = async (req, res) => {
+  try {
+    const { code, state, error: googleError } = req.query;
+
+    let returnTo = "http://localhost:5173";
+    let redirectUri = "";
+
+    if (state) {
+      try {
+        const decodedState = JSON.parse(Buffer.from(state, "base64").toString("utf-8"));
+        returnTo = decodedState.returnTo || returnTo;
+        redirectUri = decodedState.redirectUri || redirectUri;
+      } catch {
+        // Fallback if state is simple string
+      }
+    }
+
+    if (googleError || !code) {
+      const targetUrl = new URL(returnTo);
+      targetUrl.searchParams.set("error", googleError || "OAuth access denied");
+      return res.redirect(targetUrl.toString());
+    }
+
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    const fallbackCallback = `${protocol}://${host}/auth/google/callback`;
+
+    const finalRedirectUri = redirectUri || ENV.GOOGLE_CALLBACK_URL || fallbackCallback;
+
+    // Exchange authorization code for tokens
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: ENV.GOOGLE_CLIENT_ID,
+        client_secret: ENV.GOOGLE_CLIENT_SECRET,
+        redirect_uri: finalRedirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+
+    if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error("Google Token Exchange Failed:", tokenData);
+      const targetUrl = new URL(returnTo);
+      targetUrl.searchParams.set("error", tokenData.error_description || "Google token exchange failed");
+      return res.redirect(targetUrl.toString());
+    }
+
+    // Fetch Google User Profile
+    const profileResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const googleUser = await profileResponse.json();
+
+    if (!googleUser || !googleUser.email) {
+      const targetUrl = new URL(returnTo);
+      targetUrl.searchParams.set("error", "Failed to retrieve Google profile");
+      return res.redirect(targetUrl.toString());
+    }
+
+    const cleanEmail = googleUser.email.toLowerCase().trim();
+    let user = await UserModel.findOne({ email: cleanEmail });
+
+    if (!user) {
+      const uniqueUsername = await generateUniqueUsername(googleUser.name || cleanEmail.split("@")[0]);
+      user = await UserModel.create({
+        email: cleanEmail,
+        username: uniqueUsername,
+        avatar: googleUser.picture || "",
+        googleId: googleUser.sub || "",
+        authProvider: "google",
+        isVerified: true,
+        lastLoginAt: new Date(),
+      });
+    } else {
+      if (user.status === "banned") {
+        const targetUrl = new URL(returnTo);
+        targetUrl.searchParams.set("error", "This account has been suspended");
+        return res.redirect(targetUrl.toString());
+      }
+      if (!user.username) {
+        user.username = await generateUniqueUsername(googleUser.name || cleanEmail.split("@")[0], user._id);
+      }
+      user.lastLoginAt = new Date();
+      if (!user.googleId && googleUser.sub) user.googleId = googleUser.sub;
+      if (!user.avatar && googleUser.picture) user.avatar = googleUser.picture;
+      user.isVerified = true;
+      await user.save();
+    }
+
+    // Issue JWT Token
+    const jwtToken = jwt.sign(
+      { userId: user._id, email: user.email },
+      ENV.JWT_SECRET || "funchat_secret_key_2026",
+      { expiresIn: "30d" }
+    );
+
+    // Dynamic Redirect back to Frontend with Auth payload
+    const targetUrl = new URL(returnTo);
+    targetUrl.searchParams.set("token", jwtToken);
+    targetUrl.searchParams.set("user", JSON.stringify({
+      _id: user._id,
+      email: user.email,
+      username: user.username,
+      avatar: user.avatar,
+    }));
+
+    return res.redirect(targetUrl.toString());
+  } catch (error) {
+    console.error("GoogleAuthCallback Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong during Google Auth Callback",
+    });
+  }
+};

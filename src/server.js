@@ -77,6 +77,16 @@ async function start() {
   // Public REST API
   app.use("/api/public", publicRestRouter);
 
+  // Google OAuth Root Aliases
+  app.get("/auth/google/redirect", (req, res, next) => {
+    req.url = "/auth/google/redirect" + (req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : "");
+    publicRestRouter(req, res, next);
+  });
+  app.get("/auth/google/callback", (req, res, next) => {
+    req.url = "/auth/google/callback" + (req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : "");
+    publicRestRouter(req, res, next);
+  });
+
   app.get("/health", (req, res) => {
     res.json({ ok: true });
   });
