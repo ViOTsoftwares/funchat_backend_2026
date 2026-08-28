@@ -1,19 +1,29 @@
 import { getQueue } from "../utils/queue.js";
 import { saveMessage, clearConversation } from "./messages.js";
 
+// Always use io.to(socketId).emit(...) for 100% reliable Socket.IO event delivery
 export function safeEmit(io, socketId, event, payload) {
-  const socket = io.sockets.sockets.get(socketId);
-  if (socket) socket.emit(event, payload);
+  if (!socketId) return;
+  io.to(socketId).emit(event, payload);
 }
 
 export async function clearPairing(io, state, socketId, reason) {
   const otherId = state.pairedWith.get(socketId);
+
+  // Purge socket from queues
+  const chatIdx = state.chatQueue.indexOf(socketId);
+  if (chatIdx !== -1) state.chatQueue.splice(chatIdx, 1);
+  const videoIdx = state.videoQueue.indexOf(socketId);
+  if (videoIdx !== -1) state.videoQueue.splice(videoIdx, 1);
+
   if (!otherId) return;
+
   const conversationId = state.conversationIdBySocket.get(socketId);
   state.pairedWith.delete(socketId);
   state.pairedWith.delete(otherId);
   state.conversationIdBySocket.delete(socketId);
   state.conversationIdBySocket.delete(otherId);
+
   if (conversationId) {
     const setRef = state.conversationSockets.get(conversationId);
     if (setRef) {
@@ -33,17 +43,17 @@ export async function clearPairing(io, state, socketId, reason) {
       }
     }
   }
+
   if (reason === "next") {
     safeEmit(io, otherId, "conversation_cleared", { conversationId });
   }
   safeEmit(io, otherId, "partner_left", { reason: reason || "left" });
 }
 
-const soloTimers = new Map();
-
-export function executePair(io, state, mode, a, b, customNameB = null) {
+export function executePair(io, state, mode, a, b) {
   state.pairedWith.set(a, b);
   state.pairedWith.set(b, a);
+
   const conversationId = `${a}:${b}:${Date.now()}`;
   state.conversationIdBySocket.set(a, conversationId);
   state.conversationIdBySocket.set(b, conversationId);
@@ -55,68 +65,46 @@ export function executePair(io, state, mode, a, b, customNameB = null) {
     state.pendingConversationClear.delete(conversationId);
   }
 
-  const nameA = io.sockets.sockets.get(a)?.profileName || "Stranger";
-  const nameB = customNameB || io.sockets.sockets.get(b)?.profileName || "Stranger";
+  const socketA = io.sockets.sockets.get(a);
+  const socketB = io.sockets.sockets.get(b);
+
+  const nameA = socketA?.profileName || "Stranger";
+  const nameB = socketB?.profileName || "Stranger";
+
+  console.log(`⚡ [MATCH SUCCESS] Real User A (${a} - ${nameA}) <===> Real User B (${b} - ${nameB})`);
 
   safeEmit(io, a, "matched", { partnerId: b, mode, conversationId, partnerName: nameB });
-  if (!b.startsWith("bot_")) {
-    safeEmit(io, b, "matched", { partnerId: a, mode, conversationId, partnerName: nameA });
-  }
+  safeEmit(io, b, "matched", { partnerId: a, mode, conversationId, partnerName: nameA });
 
   const autoMessage = { text: "Connected! Say hello to your partner 👋", from: "system" };
   safeEmit(io, a, "message", autoMessage);
-  if (!b.startsWith("bot_")) {
-    safeEmit(io, b, "message", autoMessage);
-  }
+  safeEmit(io, b, "message", autoMessage);
   saveMessage(conversationId, autoMessage).catch(() => {});
 }
 
 export async function tryMatch(io, state, mode) {
   const queue = getQueue(state, mode);
-  console.log(`[tryMatch] mode:${mode} queue.length:${queue.length} totalConnectedSockets:${io.sockets.sockets.size}`);
 
-  // 1. Pair real users immediately whenever 2 or more users are in queue
+  // 1. Purge disconnected or already-paired sockets from queue before matching
+  let i = queue.length - 1;
+  while (i >= 0) {
+    const sId = queue[i];
+    const sock = io.sockets.sockets.get(sId);
+    if (!sock || !sock.connected || state.pairedWith.has(sId)) {
+      queue.splice(i, 1);
+    }
+    i--;
+  }
+
+  console.log(`[tryMatch] mode:${mode} | Queue Size: ${queue.length} | Connected Sockets: ${io.sockets.sockets.size}`);
+
+  // 2. Instantly pair any two active real users
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
 
-    // Verify both sockets are still actively connected to server
-    const socketA = io.sockets.sockets.get(a);
-    const socketB = io.sockets.sockets.get(b);
+    if (!a || !b || a === b) continue;
 
-    if (!socketA || !socketA.connected) {
-      if (socketB && socketB.connected) queue.unshift(b);
-      continue;
-    }
-    if (!socketB || !socketB.connected) {
-      queue.unshift(a);
-      continue;
-    }
-
-    if (soloTimers.has(a)) { clearTimeout(soloTimers.get(a)); soloTimers.delete(a); }
-    if (soloTimers.has(b)) { clearTimeout(soloTimers.get(b)); soloTimers.delete(b); }
-
-    console.log(`[Matchmaking Success] Paired real user ${a} (${socketA.profileName}) with ${b} (${socketB.profileName})`);
     executePair(io, state, mode, a, b);
-  }
-
-  // 2. FunBot companion is ONLY for solo local developer testing when ONLY 1 single socket exists on entire server
-  // If there are multiple sockets connected to the server (real site visitors), DO NOT intercept with FunBot!
-  const totalSockets = io.sockets.sockets.size;
-  if (queue.length === 1 && mode === "chat" && totalSockets <= 1) {
-    const singleSocketId = queue[0];
-    if (!soloTimers.has(singleSocketId)) {
-      const timer = setTimeout(() => {
-        soloTimers.delete(singleSocketId);
-        const idx = queue.indexOf(singleSocketId);
-        if (idx !== -1 && io.sockets.sockets.size <= 1) {
-          queue.splice(idx, 1);
-          const botId = `bot_${Date.now()}`;
-          console.log("[FunBot Solo Test Pair]", singleSocketId);
-          executePair(io, state, mode, singleSocketId, botId, "FunBot ✨");
-        }
-      }, 15000);
-      soloTimers.set(singleSocketId, timer);
-    }
   }
 }

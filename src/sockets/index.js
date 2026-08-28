@@ -83,41 +83,6 @@ function registerSocketHandlers(io, state) {
         }
       }
 
-      if (partnerId.startsWith("bot_")) {
-        // FunBot companion response logic
-        const conversationId = state.conversationIdBySocket.get(socket.id);
-        saveMessage(conversationId, {
-          text: derivedText,
-          emojiUrl: derivedEmoji,
-          parts,
-          from: socket.userId,
-          senderName: senderName || "Stranger",
-        }).catch(() => {});
-
-        // Simulate FunBot typing and replying
-        socket.emit("typing", { isTyping: true });
-        setTimeout(() => {
-          socket.emit("typing", { isTyping: false });
-          const responses = [
-            "Hey! Glad to connect with you!",
-            "FunChat is running fast and smooth! How are you doing today?",
-            "That's awesome! What are your favorite topics?",
-            "Nice! Everything is working great on our live connection ✨",
-            "Haha cool! FunChat connection is active and private.",
-          ];
-          const randomReply = responses[Math.floor(Math.random() * responses.length)];
-          const replyPayload = {
-            text: randomReply,
-            parts: [{ type: "text", text: randomReply }],
-            from: partnerId,
-            senderName: "FunBot ✨",
-          };
-          socket.emit("message", replyPayload);
-          saveMessage(conversationId, replyPayload).catch(() => {});
-        }, 1200);
-        return;
-      }
-
       safeEmit(io, partnerId, "message", {
         text: derivedText,
         emojiUrl: derivedEmoji,
