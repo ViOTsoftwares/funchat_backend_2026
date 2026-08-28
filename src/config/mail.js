@@ -12,18 +12,20 @@ export const createTransporter = () => {
     },
   });
 };
-export const sendEmail = async (to, subject, html ) => {
+export const sendEmail = async (to, subject, html) => {
   try {
     const transporter = createTransporter();
 
     const info = await transporter.sendMail({
-      from: ENV.SMTP_USER,
+      from: `"FunChat Connect" <${ENV.SMTP_USER}>`,
       to,
       subject,
       html,
     });
-    console.log("Email is sent", info);
+    console.log("<<=== Email is sent successfully ===>>", info?.messageId || "OK");
+    return { success: true, info };
   } catch (error) {
-    console.log("error on send email----->");
+    console.error("error on send email----->", error);
+    return { success: false, error: error?.message || "Failed to send email" };
   }
 };

@@ -39,6 +39,10 @@ const communityGroupSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    allowImages: {
+      type: Boolean,
+      default: true,
+    },
     isActive: {
       type: Boolean,
       default: true,

@@ -3,12 +3,25 @@ import Conversation from "../models/Conversation.js";
 export async function saveMessage(conversationId, payload) {
   if (!conversationId) return null;
   const message = {
-    userId: payload.from || "system",
+    id: payload.id || payload.tempId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    userId: payload.userId || payload.from || "system",
     senderName: payload.senderName || "",
     text: payload.text || "",
     emojiUrl: payload.emojiUrl || "",
+    imageUrl: payload.imageUrl || "",
     parts: Array.isArray(payload.parts) ? payload.parts : [],
-    createdAt: new Date()
+    replyTo: payload.replyTo
+      ? {
+          id: payload.replyTo.id || "",
+          senderName: payload.replyTo.senderName || "",
+          text: payload.replyTo.text || "",
+          emojiUrl: payload.replyTo.emojiUrl || "",
+          imageUrl: payload.replyTo.imageUrl || "",
+        }
+      : null,
+    isEdited: Boolean(payload.isEdited),
+    editedAt: payload.editedAt || null,
+    createdAt: payload.createdAt ? new Date(payload.createdAt) : new Date(),
   };
 
   return Conversation.findOneAndUpdate(
@@ -16,6 +29,64 @@ export async function saveMessage(conversationId, payload) {
     { $push: { messages: message } },
     { upsert: true, new: true }
   );
+}
+
+export async function editMessage(conversationId, messageId, { text, emojiUrl, parts, userId }) {
+  if (!conversationId || !messageId) return null;
+
+  try {
+    const convo = await Conversation.findOne({ conversationId });
+    if (!convo || !convo.messages || convo.messages.length === 0) {
+      console.warn(`[editMessage] Conversation ${conversationId} not found or empty.`);
+      return null;
+    }
+
+    // Find the message index by matching id, _id, or hist index
+    let targetIndex = convo.messages.findIndex(
+      (m) => String(m.id || "") === String(messageId) || (m._id && String(m._id) === String(messageId))
+    );
+
+    // Fallback: If messageId has hist_timestamp_index pattern (for older pre-existing messages)
+    if (targetIndex === -1 && typeof messageId === "string" && messageId.startsWith("hist_")) {
+      const segs = messageId.split("_");
+      const idx = parseInt(segs[segs.length - 1], 10);
+      if (!isNaN(idx) && convo.messages[idx]) {
+        targetIndex = idx;
+      }
+    }
+
+    if (targetIndex === -1) {
+      console.warn(`[editMessage] Message with ID ${messageId} not found in ${conversationId}`);
+      return null;
+    }
+
+    const targetMsg = convo.messages[targetIndex];
+
+    // Enforce 10-minute edit window (with 1 minute grace period for clock drift)
+    const msgCreatedAt = targetMsg.createdAt ? new Date(targetMsg.createdAt).getTime() : 0;
+    if (msgCreatedAt > 0) {
+      const MAX_EDIT_AGE_MS = 11 * 60 * 1000; // 10 minutes + 1 minute grace period
+      if (Date.now() - msgCreatedAt > MAX_EDIT_AGE_MS) {
+        console.warn(`[editMessage] Edit rejected: Message ${messageId} is older than 10 minutes.`);
+        return null;
+      }
+    }
+
+    targetMsg.text = text || "";
+    targetMsg.emojiUrl = emojiUrl || "";
+    targetMsg.parts = Array.isArray(parts) ? parts : [];
+    targetMsg.isEdited = true;
+    targetMsg.editedAt = new Date();
+    targetMsg.id = String(messageId);
+
+    convo.markModified("messages");
+    const updatedConvo = await convo.save();
+    console.log(`[editMessage] Successfully updated and persisted message ${messageId} in ${conversationId}`);
+    return updatedConvo;
+  } catch (err) {
+    console.error(`[editMessage] Failed to save edited message:`, err);
+    return null;
+  }
 }
 
 export async function clearConversation(conversationId) {
@@ -26,7 +97,12 @@ export async function clearConversation(conversationId) {
 export async function getConversationMessages(conversationId) {
   if (!conversationId) return [];
   const convo = await Conversation.findOne({ conversationId }).lean();
-  return convo?.messages || [];
+  const rawList = convo?.messages || [];
+  return rawList.map((m, idx) => ({
+    ...m,
+    id: m.id || (m._id ? String(m._id) : `msg_${m.createdAt ? new Date(m.createdAt).getTime() : idx}_${idx}`),
+    isEdited: Boolean(m.isEdited),
+  }));
 }
 
 /**
@@ -67,5 +143,11 @@ export async function getConversationMessagesPaged(conversationId, limit = 10, s
   const startIndex = Math.max(total - skip - limit, 0);
   const hasMore = startIndex > 0;
 
-  return { messages: messages || [], total, hasMore };
+  const normalized = (messages || []).map((m, idx) => ({
+    ...m,
+    id: m.id || (m._id ? String(m._id) : `msg_${m.createdAt ? new Date(m.createdAt).getTime() : startIndex + idx}_${startIndex + idx}`),
+    isEdited: Boolean(m.isEdited),
+  }));
+
+  return { messages: normalized, total, hasMore };
 }

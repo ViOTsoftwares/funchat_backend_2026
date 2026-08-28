@@ -1,5 +1,8 @@
+import fs from "fs";
+import mongoose from "mongoose";
 import CommunityCategory from "../models/communityCategory.js";
 import CommunityGroup from "../models/communityGroup.js";
+import Setting from "../models/setting.js";
 import { HandleError } from "../utils/error.js";
 
 // ----- Public Endpoints -----
@@ -24,7 +27,9 @@ export const GetPublicCommunities = async (req, res) => {
             categoryImage: cat.image || "",
             description: g.description,
             chat_timing: g.chat_timing,
+            messageDelay: g.messageDelay || 0,
             isPopular: Boolean(g.isPopular),
+            allowImages: g.allowImages !== false,
           })),
         };
       })
@@ -117,6 +122,90 @@ export const DeleteCategory = async (req, res) => {
   }
 };
 
+// ----- Public Image Upload Endpoint -----
+
+export const UploadCommunityImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, success: false, message: "No image file provided" });
+    }
+
+    // 1. Check Global Admin Settings
+    const setting = await Setting.findOne().lean();
+    if (setting?.communityImageUpload?.enabled === false) {
+      try {
+        if (req.file.path && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      } catch {}
+      return res.status(403).json({
+        ok: false,
+        success: false,
+        message: "Image uploads are currently disabled by administrator.",
+      });
+    }
+
+    // 2. Check dynamic size limit (capped at max 5MB)
+    const maxLimitMB = Math.min(setting?.communityImageUpload?.maxFileSizeMB || 5, 5);
+    const maxBytes = maxLimitMB * 1024 * 1024;
+    if (req.file.size > maxBytes) {
+      try {
+        if (req.file.path && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+      } catch {}
+      return res.status(400).json({
+        ok: false,
+        success: false,
+        message: `Image exceeds the maximum allowed size of ${maxLimitMB}MB.`,
+      });
+    }
+
+    // 3. Check Group Level Settings (if groupId is provided)
+    const targetGroupId = req.body.groupId || req.query.groupId;
+    if (targetGroupId) {
+      const isObjectId = mongoose.Types.ObjectId.isValid(targetGroupId);
+      const group = await CommunityGroup.findOne({
+        $or: [
+          { slug: targetGroupId },
+          ...(isObjectId ? [{ _id: targetGroupId }] : []),
+        ],
+      }).lean();
+
+      if (group && group.allowImages === false) {
+        try {
+          if (req.file.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+          }
+        } catch {}
+        return res.status(403).json({
+          ok: false,
+          success: false,
+          message: "Image uploads are disabled in this community group.",
+        });
+      }
+    }
+
+    const filename = req.file.filename;
+    const imageUrl = `/image/community/${filename}`;
+    return res.status(200).json({
+      ok: true,
+      success: true,
+      message: "Image uploaded successfully",
+      imageUrl,
+      filename,
+      size: req.file.size,
+    });
+  } catch (error) {
+    try {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch {}
+    HandleError(res, error, "Failed to upload image");
+  }
+};
+
 // ----- Admin Endpoints for Group -----
 
 export const GroupList = async (req, res) => {
@@ -150,6 +239,9 @@ export const CreateGroup = async (req, res) => {
     if (payload.isPopular !== undefined) {
       payload.isPopular = payload.isPopular === "true" || payload.isPopular === true;
     }
+    if (payload.allowImages !== undefined) {
+      payload.allowImages = payload.allowImages === "true" || payload.allowImages === true;
+    }
     const newGroup = await CommunityGroup.create(payload);
     res.status(201).json({ ok: true, data: newGroup, message: "Group created successfully" });
   } catch (error) {
@@ -171,6 +263,9 @@ export const UpdateGroup = async (req, res) => {
     }
     if (payload.isPopular !== undefined) {
       payload.isPopular = payload.isPopular === "true" || payload.isPopular === true;
+    }
+    if (payload.allowImages !== undefined) {
+      payload.allowImages = payload.allowImages === "true" || payload.allowImages === true;
     }
     const id = req.body._id || req.body.id;
     if (!id) {

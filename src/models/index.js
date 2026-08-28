@@ -6,6 +6,7 @@ import EmailTemplateModel from "./emailTemplate.js";
 import BlogModel from "./blog.js";
 import CMSModel from "./cms.js";
 import TestimonialModel from "./testimonial.js";
+import UserModel from "./user.js";
 
 export {
   AdminModel,
@@ -16,4 +17,5 @@ export {
   BlogModel,
   CMSModel,
   TestimonialModel,
+  UserModel,
 };

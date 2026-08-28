@@ -1,6 +1,6 @@
 import { removeFromQueue, getQueue } from "../utils/queue.js";
 import { safeEmit, clearPairing, tryMatch } from "../services/matchmaking.js";
-import { saveMessage, getConversationMessages, clearConversation, getConversationMessagesPaged } from "../services/messages.js";
+import { saveMessage, editMessage, getConversationMessages, clearConversation, getConversationMessagesPaged } from "../services/messages.js";
 import CommunityGroup from "../models/communityGroup.js";
 import SettingModel from "../models/setting.js";
 
@@ -295,7 +295,8 @@ function registerSocketHandlers(io, state) {
       });
     });
 
-    socket.on("group_message", async ({ groupId, text, parts, senderName, id, tempId, from, userId }) => {
+    socket.on("group_message", async ({ groupId, text, parts, imageUrl, senderName, id, tempId, from, userId, replyTo }) => {
+      if (!groupId) return;
       const delayMinutes = state.groupDelays.get(groupId) || 0;
       if (delayMinutes > 0) {
         const key = `${groupId}:${socket.userId}`;
@@ -329,6 +330,21 @@ function registerSocketHandlers(io, state) {
         }
       }
 
+      let finalImageUrl = imageUrl || "";
+      if (finalImageUrl) {
+        try {
+          const setting = await SettingModel.findOne().lean();
+          if (setting?.communityImageUpload?.enabled === false) {
+            finalImageUrl = "";
+          } else {
+            const group = await CommunityGroup.findOne({ slug: groupId }).lean();
+            if (group && group.allowImages === false) {
+              finalImageUrl = "";
+            }
+          }
+        } catch {}
+      }
+
       const clientMsgId = id || tempId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       const messagePayload = {
@@ -337,10 +353,21 @@ function registerSocketHandlers(io, state) {
         groupId,
         text: derivedText,
         emojiUrl: derivedEmoji,
+        imageUrl: finalImageUrl,
         parts,
         from: from || socket.userId,
         userId: userId || from || socket.userId,
         senderName: senderName || socket.profileName || "Stranger",
+        replyTo: replyTo
+          ? {
+              id: replyTo.id || "",
+              senderName: replyTo.senderName || "",
+              text: replyTo.text || "",
+              emojiUrl: replyTo.emojiUrl || "",
+              imageUrl: replyTo.imageUrl || "",
+            }
+          : null,
+        isEdited: false,
         createdAt: new Date().toISOString()
       };
 
@@ -353,13 +380,73 @@ function registerSocketHandlers(io, state) {
         id: messagePayload.id,
         text: derivedText,
         emojiUrl: derivedEmoji,
+        imageUrl: messagePayload.imageUrl,
         parts,
         from: messagePayload.from,
         userId: messagePayload.userId,
         senderName: messagePayload.senderName,
+        replyTo: messagePayload.replyTo,
+        createdAt: messagePayload.createdAt,
       }).catch((err) => {
         console.error("Error saving group message:", err);
       });
+    });
+
+    // ── Edit Message Handler ──
+    socket.on("edit_group_message", async ({ groupId, messageId, text, parts, emojiUrl }, ack) => {
+      try {
+        if (!groupId || !messageId) {
+          if (typeof ack === "function") ack({ ok: false, error: "Missing groupId or messageId" });
+          return;
+        }
+
+        let derivedText = text || "";
+        if (Array.isArray(parts) && parts.length) {
+          derivedText = parts
+            .filter((part) => part?.type === "text")
+            .map((part) => part.text || "")
+            .join("");
+        }
+        let derivedEmoji = emojiUrl || "";
+        if (Array.isArray(parts)) {
+          const firstEmoji = parts.find((part) => part?.type === "emoji");
+          if (firstEmoji && derivedText.trim() === "") {
+            derivedEmoji = firstEmoji.url;
+          }
+        }
+
+        const conversationId = `group:${groupId}`;
+        const editedAt = new Date().toISOString();
+
+        await editMessage(conversationId, messageId, {
+          text: derivedText,
+          emojiUrl: derivedEmoji,
+          parts,
+          userId: socket.userId
+        });
+
+        const editPayload = {
+          groupId,
+          messageId,
+          text: derivedText,
+          emojiUrl: derivedEmoji,
+          parts,
+          isEdited: true,
+          editedAt
+        };
+
+        // Broadcast to EVERYONE in the room
+        io.to(groupId).emit("group_message_edited", editPayload);
+
+        if (typeof ack === "function") {
+          ack({ ok: true, ...editPayload });
+        }
+      } catch (err) {
+        console.error("Error editing group message:", err);
+        if (typeof ack === "function") {
+          ack({ ok: false, error: err.message });
+        }
+      }
     });
 
     // ── Load More Messages (lazy pagination) ──

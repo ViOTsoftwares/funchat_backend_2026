@@ -41,6 +41,11 @@ router
   .get(adminAuthMiddleware, SettingCrt.GetFeatureControl)
   .post(adminAuthMiddleware, SettingCrt.UpdateFeatureControl);
 
+router
+  .route("/settings/community-media")
+  .get(adminAuthMiddleware, SettingCrt.GetCommunityMediaSettings)
+  .post(adminAuthMiddleware, SettingCrt.UpdateCommunityMediaSettings);
+
 // blog
 router
   .route("/blog")

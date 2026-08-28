@@ -12,11 +12,13 @@ import registerSocketHandlers from "./sockets/index.js";
 import { connectDB } from "./config/DB.js";
 import { seedDefaultAds } from "./controllers/advertisement.js";
 import { seedDefaultCMS } from "./controllers/cms.js";
+import { seedDefaultEmailTemplates } from "./controllers/emailTemplate.js";
 
 async function start() {
   await connectDB();
   await seedDefaultAds();
   await seedDefaultCMS();
+  await seedDefaultEmailTemplates();
 
   const app = express();
   const AllowOrigins = ENV.CORS_ORIGIN ? ENV.CORS_ORIGIN.split(",") : [];

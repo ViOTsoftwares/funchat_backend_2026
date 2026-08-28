@@ -30,6 +30,16 @@ const SettingSchema = new mongoose.Schema(
         default: "live",
       },
     },
+    communityImageUpload: {
+      enabled: {
+        type: Boolean,
+        default: true,
+      },
+      maxFileSizeMB: {
+        type: Number,
+        default: 5,
+      },
+    },
   },
   { timestamps: true }
 );
