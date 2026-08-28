@@ -73,34 +73,49 @@ export function executePair(io, state, mode, a, b, customNameB = null) {
 
 export async function tryMatch(io, state, mode) {
   const queue = getQueue(state, mode);
-  console.log("[tryMatch]", mode, "queue size:", queue.length);
+  console.log(`[tryMatch] mode:${mode} queue.length:${queue.length} totalConnectedSockets:${io.sockets.sockets.size}`);
 
-  // 1. Pair real users first if 2 or more are in queue
+  // 1. Pair real users immediately whenever 2 or more users are in queue
   while (queue.length >= 2) {
     const a = queue.shift();
     const b = queue.shift();
-    if (!a || !b || a === b) continue;
+
+    // Verify both sockets are still actively connected to server
+    const socketA = io.sockets.sockets.get(a);
+    const socketB = io.sockets.sockets.get(b);
+
+    if (!socketA || !socketA.connected) {
+      if (socketB && socketB.connected) queue.unshift(b);
+      continue;
+    }
+    if (!socketB || !socketB.connected) {
+      queue.unshift(a);
+      continue;
+    }
 
     if (soloTimers.has(a)) { clearTimeout(soloTimers.get(a)); soloTimers.delete(a); }
     if (soloTimers.has(b)) { clearTimeout(soloTimers.get(b)); soloTimers.delete(b); }
 
+    console.log(`[Matchmaking Success] Paired real user ${a} (${socketA.profileName}) with ${b} (${socketB.profileName})`);
     executePair(io, state, mode, a, b);
   }
 
-  // 2. If a single user is waiting in chat queue, match with companion after 3.5s so single user testing works
-  if (queue.length === 1 && mode === "chat") {
+  // 2. FunBot companion is ONLY for solo local developer testing when ONLY 1 single socket exists on entire server
+  // If there are multiple sockets connected to the server (real site visitors), DO NOT intercept with FunBot!
+  const totalSockets = io.sockets.sockets.size;
+  if (queue.length === 1 && mode === "chat" && totalSockets <= 1) {
     const singleSocketId = queue[0];
     if (!soloTimers.has(singleSocketId)) {
       const timer = setTimeout(() => {
         soloTimers.delete(singleSocketId);
         const idx = queue.indexOf(singleSocketId);
-        if (idx !== -1) {
+        if (idx !== -1 && io.sockets.sockets.size <= 1) {
           queue.splice(idx, 1);
           const botId = `bot_${Date.now()}`;
-          console.log("[FunBot Auto-Matched]", singleSocketId, botId);
+          console.log("[FunBot Solo Test Pair]", singleSocketId);
           executePair(io, state, mode, singleSocketId, botId, "FunBot ✨");
         }
-      }, 3500);
+      }, 15000);
       soloTimers.set(singleSocketId, timer);
     }
   }
