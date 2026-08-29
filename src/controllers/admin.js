@@ -7,7 +7,77 @@ import {
   BlogModel,
   SettingModel,
   TestimonialModel,
+  UserModel,
 } from "../models/index.js";
+
+// App Users Management (with OTP)
+export const AppUserList = async (req, res) => {
+  try {
+    let { page, limit, filter } = req.query;
+    const baseFilter = ColumnFilter(filter);
+    const sort = { createdAt: -1 };
+    const { skip } = Pagination({ page, limit });
+
+    const list = await UserModel.find(baseFilter)
+      .limit(limit)
+      .skip(skip)
+      .sort(sort);
+
+    const count = await UserModel.countDocuments(baseFilter);
+
+    return res.status(200).json({
+      success: true,
+      message: "Get all app users",
+      result: { list, count },
+    });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Something went wrong" });
+  }
+};
+
+export const ToggleUserStatus = async (req, res) => {
+  try {
+    const { id, status } = req.body;
+    const user = await UserModel.findById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    user.status = status || (user.status === "banned" ? "active" : "banned");
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `User status changed to ${user.status}`,
+      result: user,
+    });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to update user status" });
+  }
+};
+
+export const DeleteUser = async (req, res) => {
+  try {
+    const { id } = req.body;
+    await UserModel.deleteOne({ _id: id });
+    return res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to delete user" });
+  }
+};
+
 import { ENV } from "../config/env.js";
 import state from "../store/state.js";
 

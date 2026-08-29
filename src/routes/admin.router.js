@@ -30,6 +30,14 @@ router
   .delete(adminAuthMiddleware, adminPermission("Admin", "delete"), AdminCrt.DeleteAdmin);
 router.get("/admin/:id", adminAuthMiddleware, adminPermission("Admin", "view"), AdminCrt.OneAdmin);
 
+// app users & OTP management
+router
+  .route("/users")
+  .get(adminAuthMiddleware, AdminCrt.AppUserList)
+  .patch(adminAuthMiddleware, AdminCrt.ToggleUserStatus)
+  .delete(adminAuthMiddleware, AdminCrt.DeleteUser);
+
+
 // settings
 router
   .route("/settings")
