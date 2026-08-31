@@ -478,7 +478,9 @@ export const UpdateProfile = async (req, res) => {
 // ─── 5. Google OAuth Login ───────────────────────────────────────────────────
 export const GoogleLogin = async (req, res) => {
   try {
-    const { credential, access_token, profile } = req.body;
+    const { credential, access_token, profile, username, preferredUsername } = req.body;
+    const rawSiteUsername = String(username || preferredUsername || "").trim();
+    const siteUsername = (rawSiteUsername && rawSiteUsername !== "Stranger") ? rawSiteUsername : "";
 
     let googleUser = null;
 
@@ -531,7 +533,8 @@ export const GoogleLogin = async (req, res) => {
     let user = await UserModel.findOne({ email: cleanEmail });
 
     if (!user) {
-      const uniqueUsername = await generateUniqueUsername(googleUser.name || cleanEmail.split("@")[0]);
+      const nameSeed = siteUsername || googleUser.name || cleanEmail.split("@")[0];
+      const uniqueUsername = await generateUniqueUsername(nameSeed);
       user = await UserModel.create({
         email: cleanEmail,
         username: uniqueUsername,
@@ -549,7 +552,8 @@ export const GoogleLogin = async (req, res) => {
         });
       }
       if (!user.username) {
-        user.username = await generateUniqueUsername(googleUser.name || cleanEmail.split("@")[0], user._id);
+        const nameSeed = siteUsername || googleUser.name || cleanEmail.split("@")[0];
+        user.username = await generateUniqueUsername(nameSeed, user._id);
       }
       user.lastLoginAt = new Date();
       if (!user.googleId && googleUser.sub) {
@@ -613,8 +617,9 @@ export const GoogleAuthInit = async (req, res) => {
     const redirectUri = req.query.redirect_uri || ENV.GOOGLE_CALLBACK_URL || defaultCallback;
 
     const returnTo = req.query.returnTo || req.headers.referer || "http://localhost:5173";
+    const preferredUsername = req.query.username || req.query.preferredUsername || "";
 
-    const statePayload = JSON.stringify({ returnTo, redirectUri });
+    const statePayload = JSON.stringify({ returnTo, redirectUri, preferredUsername });
     const encodedState = Buffer.from(statePayload).toString("base64");
 
     const googleAuthUrl =
@@ -643,12 +648,14 @@ export const GoogleAuthCallback = async (req, res) => {
 
     let returnTo = "http://localhost:5173";
     let redirectUri = "";
+    let preferredUsername = "";
 
     if (state) {
       try {
         const decodedState = JSON.parse(Buffer.from(state, "base64").toString("utf-8"));
         returnTo = decodedState.returnTo || returnTo;
         redirectUri = decodedState.redirectUri || redirectUri;
+        preferredUsername = decodedState.preferredUsername || preferredUsername;
       } catch {
         // Fallback if state is simple string
       }
@@ -700,11 +707,15 @@ export const GoogleAuthCallback = async (req, res) => {
       return res.redirect(targetUrl.toString());
     }
 
+    const rawSiteUsername = String(preferredUsername || "").trim();
+    const siteUsername = (rawSiteUsername && rawSiteUsername !== "Stranger") ? rawSiteUsername : "";
+
     const cleanEmail = googleUser.email.toLowerCase().trim();
     let user = await UserModel.findOne({ email: cleanEmail });
 
     if (!user) {
-      const uniqueUsername = await generateUniqueUsername(googleUser.name || cleanEmail.split("@")[0]);
+      const nameSeed = siteUsername || googleUser.name || cleanEmail.split("@")[0];
+      const uniqueUsername = await generateUniqueUsername(nameSeed);
       user = await UserModel.create({
         email: cleanEmail,
         username: uniqueUsername,
@@ -721,7 +732,8 @@ export const GoogleAuthCallback = async (req, res) => {
         return res.redirect(targetUrl.toString());
       }
       if (!user.username) {
-        user.username = await generateUniqueUsername(googleUser.name || cleanEmail.split("@")[0], user._id);
+        const nameSeed = siteUsername || googleUser.name || cleanEmail.split("@")[0];
+        user.username = await generateUniqueUsername(nameSeed, user._id);
       }
       user.lastLoginAt = new Date();
       if (!user.googleId && googleUser.sub) user.googleId = googleUser.sub;
