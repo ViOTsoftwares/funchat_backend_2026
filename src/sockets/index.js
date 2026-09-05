@@ -3,12 +3,16 @@ import { safeEmit, clearPairing, tryMatch } from "../services/matchmaking.js";
 import { saveMessage, editMessage, getConversationMessages, clearConversation, getConversationMessagesPaged } from "../services/messages.js";
 import CommunityGroup from "../models/communityGroup.js";
 import SettingModel from "../models/setting.js";
+import registerCoinRushHandlers from "./coinRushHandler.js";
 
 const GROUP_PAGE_SIZE = 10;
 
 function registerSocketHandlers(io, state) {
   io.on("connection", (socket) => {
     socket.userId = socket.handshake.auth?.userId || socket.id;
+
+    // Register Coin Rush Multiplayer Game Handlers
+    registerCoinRushHandlers(io, socket);
 
     // Send current feature control status to newly connected client
     SettingModel.findOne()
