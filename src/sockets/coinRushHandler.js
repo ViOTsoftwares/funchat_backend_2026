@@ -474,6 +474,30 @@ export default function registerCoinRushHandlers(io, socket) {
     }
   });
 
+  // ── Room Voice Chat Signaling ──
+  socket.on("coinRush_voice_signal", ({ targetSocketId, signalData }) => {
+    if (!targetSocketId || !signalData) return;
+    io.to(targetSocketId).emit("coinRush_voice_signal", {
+      fromSocketId: socket.id,
+      signalData,
+    });
+  });
+
+  socket.on("coinRush_voice_mute_toggle", ({ isMuted }) => {
+    const code = socket.coinRushRoomId;
+    if (!code) return;
+    const room = coinRushRooms.get(code);
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (player) {
+      player.isMuted = Boolean(isMuted);
+      io.to(`coinrush_${code}`).emit("coinRush_voice_player_mute_changed", {
+        playerId: socket.id,
+        isMuted: player.isMuted,
+      });
+    }
+  });
+
   // ── Leave Room / Disconnect ──
   socket.on("coinRush_leaveRoom", leaveCurrentRoom);
   socket.on("disconnect", leaveCurrentRoom);
@@ -709,6 +733,7 @@ function serializePlayer(p) {
     color: p.color,
     active: p.active,
     isHost: p.isHost,
+    isMuted: p.isMuted || false,
   };
 }
 
