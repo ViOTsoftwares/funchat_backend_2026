@@ -1,4 +1,5 @@
 // Coin Rush Multiplayer Server-Authoritative Handler
+import { recordPlayerScore } from "../controllers/game.js";
 
 const ARENA_WIDTH = 1200;
 const ARENA_HEIGHT = 800;
@@ -1249,6 +1250,16 @@ function endGameRound(io, room, reason = "Time's Up!") {
     mvp,
     leaderboard: playerList,
   });
+
+  // Persist scores to Top 10 leaderboard
+  try {
+    for (const p of playerList) {
+      const isWinner = room.playMode === "TEAM" ? p.team === winningTeam : mvp && mvp.id === p.id;
+      recordPlayerScore("coin-rush", p.name, p.score, `${p.score} Coins`, isWinner);
+    }
+  } catch (err) {
+    console.error("[CoinRush] Error updating leaderboard:", err);
+  }
 }
 
 // ── Clean Up Room ──

@@ -4,6 +4,7 @@ import { saveMessage, editMessage, getConversationMessages, clearConversation, g
 import CommunityGroup from "../models/communityGroup.js";
 import SettingModel from "../models/setting.js";
 import registerCoinRushHandlers from "./coinRushHandler.js";
+import registerLastRunnerHandlers from "./lastRunnerHandler.js";
 
 const GROUP_PAGE_SIZE = 10;
 
@@ -11,8 +12,9 @@ function registerSocketHandlers(io, state) {
   io.on("connection", (socket) => {
     socket.userId = socket.handshake.auth?.userId || socket.id;
 
-    // Register Coin Rush Multiplayer Game Handlers
+    // Register Coin Rush & Last Runner Multiplayer Game Handlers
     registerCoinRushHandlers(io, socket);
+    registerLastRunnerHandlers(io, socket);
 
     // Send current feature control status to newly connected client
     SettingModel.findOne()

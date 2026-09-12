@@ -11,6 +11,7 @@ import * as ModuleCrt from "../controllers/module.js";
 import * as EmailTemplateCrt from "../controllers/emailTemplate.js";
 import * as CommunityCrt from "../controllers/community.js";
 import * as AdCrt from "../controllers/advertisement.js";
+import * as GameCrt from "../controllers/game.js";
 
 import { uploadLogo } from "../lib/multer.js";
 
@@ -129,5 +130,16 @@ router
   .delete(adminAuthMiddleware, AdCrt.DeleteAd);
 router.post("/ads/seed", adminAuthMiddleware, AdCrt.SeedAdsEndpoint);
 router.get("/ads/:id", adminAuthMiddleware, AdCrt.OneAd);
+
+// Game Management & Control
+router
+  .route("/game")
+  .get(adminAuthMiddleware, GameCrt.GameList)
+  .post(adminAuthMiddleware, GameCrt.CreateGame)
+  .put(adminAuthMiddleware, GameCrt.UpdateGame)
+  .delete(adminAuthMiddleware, GameCrt.DeleteGame);
+router.get("/game/:id", adminAuthMiddleware, GameCrt.OneGame);
+router.patch("/game/:id/status", adminAuthMiddleware, GameCrt.UpdateGameStatus);
+router.post("/game/seed", adminAuthMiddleware, GameCrt.SeedGames);
 
 export default router;

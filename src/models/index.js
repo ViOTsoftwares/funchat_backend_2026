@@ -7,6 +7,8 @@ import BlogModel from "./blog.js";
 import CMSModel from "./cms.js";
 import TestimonialModel from "./testimonial.js";
 import UserModel from "./user.js";
+import GameModel from "./game.js";
+import GameLeaderboardModel from "./gameLeaderboard.js";
 
 export {
   AdminModel,
@@ -18,4 +20,6 @@ export {
   CMSModel,
   TestimonialModel,
   UserModel,
+  GameModel,
+  GameLeaderboardModel,
 };

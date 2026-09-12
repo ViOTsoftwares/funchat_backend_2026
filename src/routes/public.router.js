@@ -4,6 +4,7 @@ import * as AdCrt from "../controllers/advertisement.js";
 import * as SettingCrt from "../controllers/settings.js";
 import * as CMSCrt from "../controllers/cms.js";
 import * as UserAuthCrt from "../controllers/userAuth.js";
+import * as GameCrt from "../controllers/game.js";
 import { userAuthMiddleware } from "../middlewares/userAuth.js";
 
 import { uploadCommunityImage } from "../lib/multer.js";
@@ -37,5 +38,11 @@ router.get("/cms/:identifier", CMSCrt.GetPublicCMSByIdentifier);
 router.get("/ads", AdCrt.GetPublicAds);
 router.post("/ads/:id/impression", AdCrt.RecordAdImpression);
 router.post("/ads/:id/click", AdCrt.RecordAdClick);
+
+// Games & Status Control
+router.get("/games", GameCrt.GetPublicGames);
+router.get("/game/:slug", GameCrt.GetPublicGameBySlug);
+router.get("/game/:slug/leaderboard", GameCrt.GetGameLeaderboard);
+router.post("/game/:slug/score", GameCrt.SubmitGameScore);
 
 export default router;
