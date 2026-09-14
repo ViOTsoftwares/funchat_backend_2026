@@ -53,6 +53,7 @@ function leaveActiveLastRunnerRoom(io, socket) {
   if (lastRunnerRooms.has(roomId)) {
     const room = lastRunnerRooms.get(roomId);
     room.players.delete(socket.id);
+    room.readyVotes.delete(socket.id);
 
     if (room.players.size === 0) {
       if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
@@ -60,7 +61,13 @@ function leaveActiveLastRunnerRoom(io, socket) {
       if (room.shortCode) lastRunnerCodes.delete(room.shortCode);
       lastRunnerRooms.delete(roomId);
     } else {
-      endLastRunnerGame(io, room, "Opponent left the match");
+      // Notify remaining players in the room that opponent left
+      io.to(room.roomId).emit("lastRunner_opponentLeft", {
+        message: "Opponent left the match.",
+      });
+      if (room.status === "PLAYING" || room.status === "COUNTDOWN") {
+        endLastRunnerGame(io, room, "Opponent left the match");
+      }
     }
   }
 }
@@ -380,10 +387,13 @@ function endLastRunnerGame(io, room, reason = "match_ended", winner = null) {
  */
 function startCountdown(io, room) {
   room.status = "COUNTDOWN";
-  if (!room.track || room.track.length === 0) {
-    room.track = generateTrackBatch(400, 35);
-    room.nextTrackDist = 400 + 35 * 350;
+  if (room.gameLoopInterval) {
+    clearInterval(room.gameLoopInterval);
+    room.gameLoopInterval = null;
   }
+  // Always generate fresh track batch starting from distance 400 for fresh race / rematch
+  room.track = generateTrackBatch(400, 35);
+  room.nextTrackDist = 400 + 35 * 350;
   room.readyVotes.clear();
 
   // Reset player race stats
@@ -871,9 +881,20 @@ export default function registerLastRunnerHandlers(io, socket) {
   // ── Rematch / Play Again ──
   socket.on("lastRunner_playAgain", () => {
     const roomId = socket.lastRunnerRoomId;
-    if (!roomId) return;
+    if (!roomId) {
+      socket.emit("lastRunner_opponentLeft", { message: "Match ended. Please find a new opponent." });
+      return;
+    }
     const room = lastRunnerRooms.get(roomId);
-    if (!room) return;
+    if (!room) {
+      socket.emit("lastRunner_opponentLeft", { message: "Room expired. Please find a new opponent." });
+      return;
+    }
+
+    if (room.players.size < 2) {
+      socket.emit("lastRunner_opponentLeft", { message: "Opponent has left the game. Please search for a new match." });
+      return;
+    }
 
     room.readyVotes.add(socket.id);
     io.to(room.roomId).emit("lastRunner_rematchVote", {
