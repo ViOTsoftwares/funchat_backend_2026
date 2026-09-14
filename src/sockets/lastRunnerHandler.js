@@ -27,7 +27,43 @@ function generateShortCode() {
 // Global server state for Last Runner
 const lastRunnerRooms = new Map(); // roomId -> Room
 const lastRunnerCodes = new Map(); // shortCode -> roomId
-let matchmakingQueue = []; // Array of { socket, name, userId }
+let matchmakingQueue = []; // Array of { socketId, name, userId, joinedAt }
+
+/**
+ * Remove a socket from the matchmaking queue
+ */
+function removeFromMatchmaking(socketId) {
+  if (!socketId) return;
+  matchmakingQueue = matchmakingQueue.filter((item) => item.socketId !== socketId);
+}
+
+/**
+ * Safely removes a socket from their current active Last Runner room
+ */
+function leaveActiveLastRunnerRoom(io, socket) {
+  if (!socket) return;
+  const roomId = socket.lastRunnerRoomId;
+  if (!roomId) return;
+
+  try {
+    socket.leave(roomId);
+  } catch {}
+  socket.lastRunnerRoomId = null;
+
+  if (lastRunnerRooms.has(roomId)) {
+    const room = lastRunnerRooms.get(roomId);
+    room.players.delete(socket.id);
+
+    if (room.players.size === 0) {
+      if (room.gameLoopInterval) clearInterval(room.gameLoopInterval);
+      if (room.countdownInterval) clearInterval(room.countdownInterval);
+      if (room.shortCode) lastRunnerCodes.delete(room.shortCode);
+      lastRunnerRooms.delete(roomId);
+    } else {
+      endLastRunnerGame(io, room, "Opponent left the match");
+    }
+  }
+}
 
 /**
  * Creates procedural track chunks with obstacles and collectibles
@@ -326,6 +362,17 @@ function endLastRunnerGame(io, room, reason = "match_ended", winner = null) {
   }
 
   console.log(`🏁 [LastRunner] Game ended in ${room.roomId}. Winner: ${winner?.name || "Draw"}, Reason: ${reason}`);
+
+  if (room.shortCode) {
+    lastRunnerCodes.delete(room.shortCode);
+  }
+
+  // Auto clean inactive room after 45 seconds
+  setTimeout(() => {
+    if (room.status === "ENDED" && lastRunnerRooms.has(room.roomId)) {
+      lastRunnerRooms.delete(room.roomId);
+    }
+  }, 45000);
 }
 
 /**
@@ -333,8 +380,10 @@ function endLastRunnerGame(io, room, reason = "match_ended", winner = null) {
  */
 function startCountdown(io, room) {
   room.status = "COUNTDOWN";
-  room.track = generateTrackBatch(400, 35);
-  room.nextTrackDist = 400 + 35 * 350;
+  if (!room.track || room.track.length === 0) {
+    room.track = generateTrackBatch(400, 35);
+    room.nextTrackDist = 400 + 35 * 350;
+  }
   room.readyVotes.clear();
 
   // Reset player race stats
@@ -358,147 +407,207 @@ function startCountdown(io, room) {
     rIdx++;
   }
 
+  const playersPayload = Array.from(room.players.values()).map(serializePlayer);
   let count = 3;
-  io.to(room.roomId).emit("lastRunner_countdown", { count, track: room.track });
+  io.to(room.roomId).emit("lastRunner_countdown", { count, track: room.track, players: playersPayload });
 
   if (room.countdownInterval) clearInterval(room.countdownInterval);
 
   room.countdownInterval = setInterval(() => {
     count--;
     if (count > 0) {
-      io.to(room.roomId).emit("lastRunner_countdown", { count, track: room.track });
+      io.to(room.roomId).emit("lastRunner_countdown", { count, track: room.track, players: playersPayload });
     } else {
       clearInterval(room.countdownInterval);
       room.countdownInterval = null;
-      io.to(room.roomId).emit("lastRunner_countdown", { count: 0, track: room.track }); // GO!
+      io.to(room.roomId).emit("lastRunner_countdown", { count: 0, track: room.track, players: playersPayload }); // GO!
       startLastRunnerLoop(io, room);
     }
   }, 1000);
 }
 
 /**
+ * Creates and starts a 1v1 match between two verified sockets
+ */
+function createAndStartMatch(io, s1, name1, s2, name2) {
+  leaveActiveLastRunnerRoom(io, s1);
+  leaveActiveLastRunnerRoom(io, s2);
+
+  const roomId = `lr_room_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const room = createLastRunnerRoom(roomId, null, false);
+
+  const player1 = {
+    id: s1.id,
+    name: name1,
+    role: "p1",
+    lane: 0,
+    targetLane: 0,
+    distance: 0,
+    speed: 320,
+    isJumping: false,
+    isSliding: false,
+    hasShield: false,
+    attackItem: null,
+    isSlowed: false,
+    slowPercent: 0,
+    eliminated: false,
+    attacksThrown: 0,
+    attacksHit: 0,
+  };
+
+  const player2 = {
+    id: s2.id,
+    name: name2,
+    role: "p2",
+    lane: 2,
+    targetLane: 2,
+    distance: 0,
+    speed: 320,
+    isJumping: false,
+    isSliding: false,
+    hasShield: false,
+    attackItem: null,
+    isSlowed: false,
+    slowPercent: 0,
+    eliminated: false,
+    attacksThrown: 0,
+    attacksHit: 0,
+  };
+
+  room.players.set(s1.id, player1);
+  room.players.set(s2.id, player2);
+  lastRunnerRooms.set(roomId, room);
+
+  s1.join(roomId);
+  s2.join(roomId);
+
+  s1.lastRunnerRoomId = roomId;
+  s2.lastRunnerRoomId = roomId;
+
+  console.log(`⚔️ [LastRunner Match] Pair found: ${name1} (${s1.id}) vs ${name2} (${s2.id}) in ${roomId}`);
+
+  const playersPayload = [serializePlayer(player1), serializePlayer(player2)];
+
+  // Emit matchFound to both players with track and player stats
+  io.to(s1.id).emit("lastRunner_matchFound", {
+    roomId,
+    role: "p1",
+    opponent: { id: s2.id, name: name2 },
+    track: room.track,
+    players: playersPayload,
+  });
+
+  io.to(s2.id).emit("lastRunner_matchFound", {
+    roomId,
+    role: "p2",
+    opponent: { id: s1.id, name: name1 },
+    track: room.track,
+    players: playersPayload,
+  });
+
+  // Start 3..2..1 countdown
+  setTimeout(() => {
+    startCountdown(io, room);
+  }, 500);
+}
+
+/**
+ * Attempts to match any available pairs in the matchmaking queue
+ */
+function tryMatchLastRunner(io) {
+  // 1. Purge disconnected sockets
+  let i = matchmakingQueue.length - 1;
+  while (i >= 0) {
+    const item = matchmakingQueue[i];
+    const sock = io.sockets.sockets.get(item.socketId);
+    if (!sock || sock.disconnected) {
+      matchmakingQueue.splice(i, 1);
+    }
+    i--;
+  }
+
+  // 2. Broadcast updated queue status to everyone currently in queue
+  for (const item of matchmakingQueue) {
+    io.to(item.socketId).emit("lastRunner_queueStatus", {
+      inQueue: true,
+      queueSize: matchmakingQueue.length,
+    });
+  }
+
+  // 3. Pair active players in a loop
+  while (matchmakingQueue.length >= 2) {
+    const p1Item = matchmakingQueue.shift();
+    const p2Item = matchmakingQueue.shift();
+
+    const s1 = io.sockets.sockets.get(p1Item.socketId);
+    const s2 = io.sockets.sockets.get(p2Item.socketId);
+
+    if (!s1 || s1.disconnected) {
+      if (s2 && !s2.disconnected) matchmakingQueue.unshift(p2Item);
+      continue;
+    }
+    if (!s2 || s2.disconnected || s1.id === s2.id) {
+      if (s1 && !s1.disconnected) matchmakingQueue.unshift(p1Item);
+      continue;
+    }
+
+    createAndStartMatch(io, s1, p1Item.name, s2, p2Item.name);
+  }
+
+  // 4. Update status for any remaining players after pairing
+  for (const item of matchmakingQueue) {
+    io.to(item.socketId).emit("lastRunner_queueStatus", {
+      inQueue: true,
+      queueSize: matchmakingQueue.length,
+    });
+  }
+}
+
+/**
  * Registers all Socket.IO handlers for Last Runner
  */
 export default function registerLastRunnerHandlers(io, socket) {
-  // ── Helper: Remove socket from matchmaking queue ──
-  function removeFromMatchmaking() {
-    matchmakingQueue = matchmakingQueue.filter((item) => item.socket.id !== socket.id);
-  }
-
   // ── OPTION 1: Join Random Matchmaking ──
   socket.on("lastRunner_joinMatchmaking", ({ name }) => {
     const playerName = (name || socket.profileName || "Runner").trim();
 
-    // Prevent duplicate entry
-    removeFromMatchmaking();
+    leaveActiveLastRunnerRoom(io, socket);
+    removeFromMatchmaking(socket.id);
 
-    console.log(`[LastRunner Queue] ${playerName} (${socket.id}) joined matchmaking. Queue size before: ${matchmakingQueue.length}`);
-    matchmakingQueue.push({ socket, name: playerName });
+    console.log(`[LastRunner Queue] ${playerName} (${socket.id}) joined matchmaking.`);
+    matchmakingQueue.push({
+      socketId: socket.id,
+      name: playerName,
+      userId: socket.userId || socket.id,
+      joinedAt: Date.now(),
+    });
 
     socket.emit("lastRunner_queueStatus", {
       inQueue: true,
       queueSize: matchmakingQueue.length,
     });
 
-    // Check if we have at least 2 players to pair
-    if (matchmakingQueue.length >= 2) {
-      const p1 = matchmakingQueue.shift();
-      const p2 = matchmakingQueue.shift();
-
-      // Guard: Ensure sockets are still connected and not same player
-      if (!p1.socket.connected) {
-        if (p2.socket.connected) matchmakingQueue.unshift(p2);
-        return;
-      }
-      if (!p2.socket.connected || p1.socket.id === p2.socket.id) {
-        if (p1.socket.connected) matchmakingQueue.unshift(p1);
-        return;
-      }
-
-      // Create unique match room
-      const roomId = `lr_room_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      const room = createLastRunnerRoom(roomId, null, false);
-
-      const player1 = {
-        id: p1.socket.id,
-        name: p1.name,
-        role: "p1",
-        lane: 0,
-        targetLane: 0,
-        distance: 0,
-        speed: 320,
-        isJumping: false,
-        isSliding: false,
-        hasShield: false,
-        attackItem: null,
-        isSlowed: false,
-        slowPercent: 0,
-        eliminated: false,
-        attacksThrown: 0,
-        attacksHit: 0,
-      };
-
-      const player2 = {
-        id: p2.socket.id,
-        name: p2.name,
-        role: "p2",
-        lane: 2,
-        targetLane: 2,
-        distance: 0,
-        speed: 320,
-        isJumping: false,
-        isSliding: false,
-        hasShield: false,
-        attackItem: null,
-        isSlowed: false,
-        slowPercent: 0,
-        eliminated: false,
-        attacksThrown: 0,
-        attacksHit: 0,
-      };
-
-      room.players.set(p1.socket.id, player1);
-      room.players.set(p2.socket.id, player2);
-      lastRunnerRooms.set(roomId, room);
-
-      p1.socket.join(roomId);
-      p2.socket.join(roomId);
-
-      p1.socket.lastRunnerRoomId = roomId;
-      p2.socket.lastRunnerRoomId = roomId;
-
-      console.log(`⚔️ [LastRunner Match] Pair found: ${p1.name} vs ${p2.name} in ${roomId}`);
-
-      // Emit matchFound to both players
-      p1.socket.emit("lastRunner_matchFound", {
-        roomId,
-        role: "p1",
-        opponent: { id: p2.socket.id, name: p2.name },
-      });
-      p2.socket.emit("lastRunner_matchFound", {
-        roomId,
-        role: "p2",
-        opponent: { id: p1.socket.id, name: p1.name },
-      });
-
-      // Start countdown
-      setTimeout(() => {
-        startCountdown(io, room);
-      }, 1000);
-    }
+    tryMatchLastRunner(io);
   });
 
   // ── Leave Matchmaking Queue ──
   socket.on("lastRunner_leaveMatchmaking", () => {
-    removeFromMatchmaking();
+    removeFromMatchmaking(socket.id);
     socket.emit("lastRunner_queueStatus", { inQueue: false, queueSize: matchmakingQueue.length });
     console.log(`[LastRunner Queue] Socket ${socket.id} left queue.`);
+    tryMatchLastRunner(io);
   });
 
   // ── OPTION 2: Create Game With Short Code ──
   socket.on("lastRunner_createGame", ({ name }, ack) => {
+    removeFromMatchmaking(socket.id);
+    leaveActiveLastRunnerRoom(io, socket);
+
     const playerName = (name || socket.profileName || "Runner").trim();
-    const shortCode = generateShortCode();
+    let shortCode = generateShortCode();
+    while (lastRunnerCodes.has(shortCode)) {
+      shortCode = generateShortCode();
+    }
     const roomId = `lr_code_${shortCode}`;
 
     const room = createLastRunnerRoom(roomId, shortCode, true);
@@ -544,6 +653,9 @@ export default function registerLastRunnerHandlers(io, socket) {
 
   // ── OPTION 2: Join Game With Code ──
   socket.on("lastRunner_joinGame", ({ code, name }, ack) => {
+    removeFromMatchmaking(socket.id);
+    leaveActiveLastRunnerRoom(io, socket);
+
     const playerName = (name || socket.profileName || "Runner").trim();
     const normalizedCode = (code || "").trim().toUpperCase();
     const roomId = lastRunnerCodes.get(normalizedCode);
@@ -600,32 +712,38 @@ export default function registerLastRunnerHandlers(io, socket) {
 
     console.log(`[LastRunner Private] ${playerName} joined room ${normalizedCode} (Host: ${host?.name})`);
 
+    const playersPayload = [serializePlayer(host), serializePlayer(guestPlayer)];
+
     const joinSuccess = {
       success: true,
       roomId,
       code: normalizedCode,
-      players: Array.from(room.players.values()).map(serializePlayer),
+      players: playersPayload,
     };
 
     if (typeof ack === "function") ack(joinSuccess);
 
     // Notify host & guest
-    socket.emit("lastRunner_matchFound", {
+    io.to(socket.id).emit("lastRunner_matchFound", {
       roomId,
       role: "p2",
       opponent: { id: host.id, name: host.name },
+      track: room.track,
+      players: playersPayload,
     });
 
     io.to(host.id).emit("lastRunner_matchFound", {
       roomId,
       role: "p1",
       opponent: { id: socket.id, name: guestPlayer.name },
+      track: room.track,
+      players: playersPayload,
     });
 
     // Both players present: start countdown
     setTimeout(() => {
       startCountdown(io, room);
-    }, 1000);
+    }, 500);
   });
 
   // ── Player Controls: Lane Shift, Jump, Slide ──
@@ -641,19 +759,16 @@ export default function registerLastRunnerHandlers(io, socket) {
     const now = Date.now();
 
     if (action === "left") {
-      // Shift 1 lane left (clamped to 0)
       if (player.targetLane > 0) {
         player.targetLane -= 1;
         player.lane = player.targetLane;
       }
     } else if (action === "right") {
-      // Shift 1 lane right (clamped to 2)
       if (player.targetLane < 2) {
         player.targetLane += 1;
         player.lane = player.targetLane;
       }
     } else if (action === "jump") {
-      // Initiate jump (duration: 750ms)
       if (!player.isJumping && !player.isSliding) {
         player.isJumping = true;
         player.jumpEndTime = now + 750;
@@ -664,7 +779,6 @@ export default function registerLastRunnerHandlers(io, socket) {
         });
       }
     } else if (action === "slide") {
-      // Initiate slide (duration: 650ms)
       if (!player.isSliding && !player.isJumping) {
         player.isSliding = true;
         player.slideEndTime = now + 650;
@@ -738,7 +852,6 @@ export default function registerLastRunnerHandlers(io, socket) {
       } else if (itemType === "bomb") {
         slowPercent = 70; // -70% speed for 2s + knockback
         durationMs = 2000;
-        // Small distance knockback
         opponent.distance = Math.max(0, opponent.distance - 40);
       }
 
@@ -777,39 +890,14 @@ export default function registerLastRunnerHandlers(io, socket) {
 
   // ── Leave Room ──
   socket.on("lastRunner_leaveGame", () => {
-    const roomId = socket.lastRunnerRoomId;
-    removeFromMatchmaking();
-
-    if (roomId && lastRunnerRooms.has(roomId)) {
-      const room = lastRunnerRooms.get(roomId);
-      room.players.delete(socket.id);
-      socket.leave(roomId);
-      socket.lastRunnerRoomId = null;
-
-      if (room.players.size === 0) {
-        if (room.shortCode) lastRunnerCodes.delete(room.shortCode);
-        lastRunnerRooms.delete(roomId);
-      } else {
-        endLastRunnerGame(io, room, "Opponent left the match");
-      }
-    }
+    removeFromMatchmaking(socket.id);
+    leaveActiveLastRunnerRoom(io, socket);
   });
 
   // ── Socket Disconnection Handling ──
   socket.on("disconnect", () => {
-    removeFromMatchmaking();
-
-    const roomId = socket.lastRunnerRoomId;
-    if (roomId && lastRunnerRooms.has(roomId)) {
-      const room = lastRunnerRooms.get(roomId);
-      room.players.delete(socket.id);
-
-      if (room.players.size === 0) {
-        if (room.shortCode) lastRunnerCodes.delete(room.shortCode);
-        lastRunnerRooms.delete(roomId);
-      } else {
-        endLastRunnerGame(io, room, "Opponent disconnected");
-      }
-    }
+    removeFromMatchmaking(socket.id);
+    leaveActiveLastRunnerRoom(io, socket);
   });
 }
+

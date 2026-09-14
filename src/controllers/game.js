@@ -1,8 +1,24 @@
-import { GameModel, GameLeaderboardModel } from "../models/index.js";
+import { GameModel, GameLeaderboardModel, NitroProfileModel } from "../models/index.js";
 import { Pagination } from "../lib/pagination.js";
 import { ColumnFilter } from "../lib/columnFilter.js";
 
 const DEFAULT_GAMES = [
+  {
+    title: "Mini Nitro Race",
+    slug: "mini-nitro-race",
+    status: "active",
+    subtitle: "Real-time Multiplayer Arcade Racing Arena",
+    description: "Race 2–8 players in fast-paced circuit showdowns! Master drifting, launch explosive nitro boosts, grab power-ups (⚡ Turbo, 🛡️ Shield, 🧲 Magnet), unlock epic cars, and rule the global leaderboards!",
+    badge: "🟢 LIVE NOW",
+    players: "2–8 Players",
+    duration: "3 Laps",
+    color: "linear-gradient(135deg, #06b6d4, #8b5cf6)",
+    icon: "SportsMotorsports",
+    maintenanceNotice: "Mini Nitro Race is undergoing scheduled server performance upgrades. We'll be back on track shortly!",
+    comingSoonNotice: "Mini Nitro Race V3 is coming soon with high-octane multiplayer circuits and garage upgrades!",
+    sortOrder: 1,
+    isActive: true,
+  },
   {
     title: "Last Runner",
     slug: "last-runner",
@@ -16,7 +32,7 @@ const DEFAULT_GAMES = [
     icon: "DirectionsRun",
     maintenanceNotice: "Last Runner is temporarily undergoing scheduled maintenance and matchmaking server upgrades. Check back shortly!",
     comingSoonNotice: "Last Runner is coming soon! Get ready to run, attack, and survive.",
-    sortOrder: 1,
+    sortOrder: 2,
     isActive: true,
   },
   {
@@ -454,16 +470,23 @@ export const GetGameLeaderboard = async (req, res) => {
       .sort({ score: -1 })
       .limit(10);
 
+    const isNitro = normalizedSlug === "mini-nitro-race" || normalizedSlug === "nitro-race";
     const formatted = leaderboard.map((item, index) => ({
       _id: item._id,
       gameSlug: item.gameSlug,
       playerName: item.playerName,
       score: item.score,
-      secondaryMetric: item.secondaryMetric || (normalizedSlug === "coin-rush" ? `${item.score} Coins` : `${item.score}m`),
+      secondaryMetric:
+        item.secondaryMetric ||
+        (normalizedSlug === "coin-rush"
+          ? `${item.score} Coins`
+          : isNitro
+          ? `${item.score} Rating`
+          : `${item.score}m`),
       wins: item.wins || 1,
       matchesPlayed: item.matchesPlayed || 1,
-      avatar: item.avatar || (index === 0 ? "👑" : index === 1 ? "🥈" : index === 2 ? "🥉" : "⚡"),
-      badge: item.badge || "Challenger",
+      avatar: item.avatar || (index === 0 ? "👑" : index === 1 ? "🥈" : index === 2 ? "🥉" : isNitro ? "🏎️" : "⚡"),
+      badge: item.badge || (isNitro ? (item.score >= 2000 ? "Master" : item.score >= 1800 ? "Diamond" : item.score >= 1600 ? "Platinum" : item.score >= 1400 ? "Gold" : item.score >= 1200 ? "Silver" : "Bronze") : "Challenger"),
       rank: index + 1,
     }));
 
@@ -492,24 +515,37 @@ export const recordPlayerScore = async (gameSlug, playerName, score, secondaryMe
     const cleanName = String(playerName).trim();
     if (!cleanName || cleanName.toLowerCase() === "runner" || cleanName.toLowerCase() === "player") return null;
 
+    const isNitro = slug === "mini-nitro-race" || slug === "nitro-race";
     let entry = await GameLeaderboardModel.findOne({ gameSlug: slug, playerName: cleanName });
     if (!entry) {
       entry = new GameLeaderboardModel({
         gameSlug: slug,
         playerName: cleanName,
         score: Math.round(score),
-        secondaryMetric: secondaryMetric || (slug === "coin-rush" ? `${Math.round(score)} Coins` : `${Math.round(score)}m`),
+        secondaryMetric:
+          secondaryMetric ||
+          (slug === "coin-rush"
+            ? `${Math.round(score)} Coins`
+            : isNitro
+            ? `${Math.round(score)} Rating`
+            : `${Math.round(score)}m`),
         wins: won ? 1 : 0,
         matchesPlayed: 1,
-        avatar: "⚡",
-        badge: "Contender",
+        avatar: isNitro ? "🏎️" : "⚡",
+        badge: isNitro ? "Contender" : "Contender",
       });
     } else {
       entry.matchesPlayed += 1;
       if (won) entry.wins += 1;
       if (score > entry.score) {
         entry.score = Math.round(score);
-        entry.secondaryMetric = secondaryMetric || (slug === "coin-rush" ? `${Math.round(score)} Coins` : `${Math.round(score)}m`);
+        entry.secondaryMetric =
+          secondaryMetric ||
+          (slug === "coin-rush"
+            ? `${Math.round(score)} Coins`
+            : isNitro
+            ? `${Math.round(score)} Rating`
+            : `${Math.round(score)}m`);
       }
     }
 
@@ -541,6 +577,76 @@ export const SubmitGameScore = async (req, res) => {
     });
   } catch (error) {
     console.error("[Leaderboard] Error submitting score:", error);
+    return res.status(500).json({ success: false, message: "Something went wrong" });
+  }
+};
+
+/**
+ * Public: Get or initialize Nitro player profile
+ */
+export const GetNitroProfile = async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const { name } = req.query;
+    if (!playerId) {
+      return res.status(400).json({ success: false, message: "Player ID is required" });
+    }
+
+    let profile = await NitroProfileModel.findOne({ playerId });
+    if (!profile) {
+      profile = await NitroProfileModel.create({
+        playerId,
+        playerName: name || "Racer",
+        xp: 0,
+        level: 1,
+        coins: 300,
+        rating: 1200,
+        rankTier: "Bronze",
+        unlockedCars: ["speedster", "balanced"],
+        selectedCar: "speedster",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Nitro profile loaded",
+      result: profile,
+    });
+  } catch (error) {
+    console.error("[NitroProfile] Error getting profile:", error);
+    return res.status(500).json({ success: false, message: "Something went wrong" });
+  }
+};
+
+/**
+ * Public: Update Nitro player profile (customization, selected car, upgrades)
+ */
+export const SaveNitroProfile = async (req, res) => {
+  try {
+    const { playerId } = req.params;
+    const updateData = req.body;
+
+    if (!playerId) {
+      return res.status(400).json({ success: false, message: "Player ID is required" });
+    }
+
+    // Sanitize updates
+    delete updateData._id;
+    delete updateData.createdAt;
+
+    const profile = await NitroProfileModel.findOneAndUpdate(
+      { playerId },
+      { $set: updateData },
+      { new: true, upsert: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Nitro profile saved",
+      result: profile,
+    });
+  } catch (error) {
+    console.error("[NitroProfile] Error saving profile:", error);
     return res.status(500).json({ success: false, message: "Something went wrong" });
   }
 };

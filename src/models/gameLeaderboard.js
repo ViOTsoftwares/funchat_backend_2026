@@ -6,7 +6,7 @@ const GameLeaderboardSchema = new mongoose.Schema(
       type: String,
       required: true,
       index: true,
-      enum: ["coin-rush", "last-runner"],
+      enum: ["coin-rush", "last-runner", "mini-nitro-race", "nitro-race"],
     },
     playerName: {
       type: String,

@@ -9,6 +9,7 @@ import TestimonialModel from "./testimonial.js";
 import UserModel from "./user.js";
 import GameModel from "./game.js";
 import GameLeaderboardModel from "./gameLeaderboard.js";
+import NitroProfileModel from "./nitroProfile.js";
 
 export {
   AdminModel,
@@ -22,4 +23,5 @@ export {
   UserModel,
   GameModel,
   GameLeaderboardModel,
+  NitroProfileModel,
 };

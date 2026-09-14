@@ -44,5 +44,7 @@ router.get("/games", GameCrt.GetPublicGames);
 router.get("/game/:slug", GameCrt.GetPublicGameBySlug);
 router.get("/game/:slug/leaderboard", GameCrt.GetGameLeaderboard);
 router.post("/game/:slug/score", GameCrt.SubmitGameScore);
+router.get("/nitro/profile/:playerId", GameCrt.GetNitroProfile);
+router.post("/nitro/profile/:playerId", GameCrt.SaveNitroProfile);
 
 export default router;
