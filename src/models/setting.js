@@ -29,6 +29,11 @@ const SettingSchema = new mongoose.Schema(
         enum: ["live", "coming_soon", "maintenance"],
         default: "live",
       },
+      game: {
+        type: String,
+        enum: ["live", "coming_soon", "maintenance"],
+        default: "live",
+      },
     },
     communityImageUpload: {
       enabled: {

@@ -157,6 +157,7 @@ const DEFAULT_FEATURE_CONTROL = {
   chat: "live",
   video: "live",
   community: "live",
+  game: "live",
 };
 
 export const GetFeatureControl = async (req, res) => {
@@ -176,17 +177,19 @@ export const GetFeatureControl = async (req, res) => {
 
 export const UpdateFeatureControl = async (req, res) => {
   try {
-    const { chat = "live", video = "live", community = "live" } = req.body;
+    const { chat = "live", video = "live", community = "live", game = "live" } = req.body;
     const allowed = ["live", "coming_soon", "maintenance"];
 
     const validChat = allowed.includes(chat) ? chat : "live";
     const validVideo = allowed.includes(video) ? video : "live";
     const validCommunity = allowed.includes(community) ? community : "live";
+    const validGame = allowed.includes(game) ? game : "live";
 
     const featureControl = {
       chat: validChat,
       video: validVideo,
       community: validCommunity,
+      game: validGame,
     };
 
     const existingSetting = await SettingModel.findOne();

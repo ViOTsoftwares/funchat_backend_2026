@@ -25,6 +25,7 @@ function registerSocketHandlers(io, state) {
           chat: "live",
           video: "live",
           community: "live",
+          game: "live",
         };
         socket.emit("feature_control_updated", fc);
       })
@@ -50,7 +51,7 @@ function registerSocketHandlers(io, state) {
       // Check if feature is live
       try {
         const setting = await SettingModel.findOne();
-        const fc = setting?.featureControl || { chat: "live", video: "live", community: "live" };
+        const fc = setting?.featureControl || { chat: "live", video: "live", community: "live", game: "live" };
         const modeStatus = fc[mode] || "live";
         if (modeStatus !== "live") {
           socket.emit("feature_unavailable", { mode, status: modeStatus });
